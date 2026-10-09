@@ -208,12 +208,21 @@ game only reads it.
 
 - New stow package `swaysweeper/.config/swaysweeper/colors.gen.toml.tmpl` mapping **every** slot
   to a role. Role choices are made by rendering under both palettes and must pass
-  `--check-colors` under both. Starting points: chrome from `surface` / `bg` / `desktop` /
-  `sel`, `light` from a role bright enough for the 3:1 bevel floor (`muted` is not —
-  ~1.4:1 measured), LEDs `critical` on `desktop`, numbers from the ANSI ramp, preferring the
-  `bright_*` entries where a `normal_*` misses 4.5:1 (`ansi_normal_red` measures 2.69:1 on
-  gruvbox `bg`), `cursor` not equal to any number (nord's `accent` equals `ansi_normal_cyan`).
+  `--check-colors` under both. Measured starting mapping (every floor passes under both):
+  `face=surface`, `light=dim`, `shadow=desktop`, `grid=sel`, **`revealed=desktop`** (darker than
+  `bg`, which is what lets magenta and gruvbox's red clear 4.5:1), `backdrop=desktop`,
+  `text=fg`, `led_bg=desktop`, `led_on=critical`, `led_off=surface`, `mine=fg`, `glint=bg`,
+  `flag=critical_text`, `ink=fg`, `exploded=critical`, `smiley=warning`, `smiley_ink=desktop`,
+  `cursor=fg_bright`; numbers 1 `ansi_bright_blue`, 2 `ansi_bright_green`, 3 `critical_text`,
+  4 `ansi_bright_magenta`, 5 `warning`, 6 `ansi_bright_cyan`, 7 `fg`, 8 `dim`.
   The template comment explains each departure from winmine's colours.
+- **New palette role `critical_text`** (Xinye, 2026-10-10): nord's only red measures 3.47:1 on
+  `desktop`, under the 4.5:1 number floor, and no nord role is a lighter red. Following `dim`'s
+  precedent — the shortest step that clears the floor, nothing more — `critical_text` is
+  `critical` mixed toward `fg_bright` in 5% steps until it clears 4.5:1 on `desktop`: nord
+  `#c87d86` (20%; 4.55:1 on `desktop`, 3.23:1 on `surface` for the flag), gruvbox `#fb4934`
+  (= `critical`, which already clears it: 4.77:1 on `desktop`). Added to **both** palettes in `palettes.toml` with that comment;
+  `theme` refuses to render if only one has it.
 - README package table row; PLAYBOOK §5.2 entry — **folded, and folding is required**: live
   repaint sees no events through an unfolded package, and the game never writes there.
   `setup.sh` must not pre-create `~/.config/swaysweeper`.
