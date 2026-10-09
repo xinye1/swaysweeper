@@ -211,7 +211,7 @@ game only reads it.
   `--check-colors` under both. Measured starting mapping (every floor passes under both):
   `face=surface`, `light=dim`, `shadow=desktop`, `grid=sel`, **`revealed=desktop`** (darker than
   `bg`, which is what lets magenta and gruvbox's red clear 4.5:1), `backdrop=desktop`,
-  `text=fg`, `led_bg=desktop`, `led_on=critical`, `led_off=surface`, `mine=fg`, `glint=bg`,
+  `text=fg`, `led_bg=desktop`, `led_on=critical`, `led_off=bg`, `mine=fg`, `glint=bg`,
   `flag=critical_text`, `ink=fg`, `exploded=critical`, `smiley=warning`, `smiley_ink=desktop`,
   `cursor=fg_bright`; numbers 1 `ansi_bright_blue`, 2 `ansi_bright_green`, 3 `critical_text`,
   4 `ansi_bright_magenta`, 5 `warning`, 6 `ansi_bright_cyan`, 7 `fg`, 8 `dim`.
