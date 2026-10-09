@@ -1,11 +1,15 @@
 # swaysweeper — design
 
-*2026-10-09. Status: approved in conversation, awaiting review of this document.*
+*2026-10-09. Status: revised after an adversarial review; awaiting Xinye's review of this document.*
 
-A faithful clone of the classic Windows Minesweeper (Windows 95/98/2000 `winmine`), drawn in the
+A faithful clone of the classic Windows Minesweeper (Windows 95–2000 `winmine`), drawn in the
 colours of the active dotfiles palette and recoloured live when the palette switches.
 Inspiration: [omasweeper](https://github.com/jankeesvw/omasweeper), a Minesweeper that draws itself
 from the active Omarchy theme.
+
+**Rules reference.** Where this document says "winmine does X" the source is the reverse-engineered
+winmine in [repnz/ReversingMinesweeper](https://github.com/repnz/ReversingMinesweeper) (XP build,
+which shares 2000's rules), cited as `file.c:line`. The one deliberate deviation is listed in §1.
 
 ## 0. Understanding
 
@@ -15,24 +19,25 @@ from the active Omarchy theme.
 - Theme = the dotfiles palettes (`palettes.toml`, nord / gruvbox), live repaint on `theme <name>`.
 - Python + GTK4 + Cairo, in its own repo (`~/repos/swaysweeper`), with the dotfiles repo providing
   one template that `theme` renders.
-- Faithful rules plus small extras: keyboard play, integer zoom, resume of a game in progress.
+- Faithful rules plus small extras: keyboard play, zoom, resume of a game in progress.
 - Name: **swaysweeper**.
+- Review decisions: fix the 95/98 one-click timer bug; clamp the counter at −99; Zoom ×1/×2 only.
 
 **Assumed**
 
-- Reference version is Windows 95–2000 winmine: its layout, menu and quirks, not XP or Vista.
 - Personal use; Linux / Wayland (sway) only.
 
 **Success criteria**
 
-1. A player who knows winmine finds no rule difference.
-2. Under nord or gruvbox it reads as *that* game in *those* colours: bevels, LEDs, the smiley,
-   not a generic grid.
+1. A player who knows winmine finds no rule difference other than the one listed in §1.
+2. Under nord or gruvbox it reads as *that* game in *those* colours — bevels, LEDs, the smiley —
+   not a generic grid, and every number is legible (§3 contrast floors).
 3. `theme <name>` recolours an open window without a restart, and nothing the theme does can crash
-   the game or lose a game in progress.
+   the game, flash it back to Win95 colours, or lose a game in progress.
 
 **Out of scope:** XP/Vista looks, online scores, hints or a solver, Omarchy themes (the slot table
-in §3 leaves room for an adapter later), non-Linux platforms.
+in §3 leaves room for an adapter later), non-Linux platforms, a `menu.toml` row (Super+Space
+already lists desktop entries and searches their keywords).
 
 ## 1. Rules (faithful)
 
@@ -41,125 +46,183 @@ in §3 leaves room for an adapter later), non-Linux platforms.
 | Beginner | 9 × 9 | 10 |
 | Intermediate | 16 × 16 | 40 |
 | Expert | 30 × 16 | 99 |
-| Custom | width 9–30, height 9–24 | 10 – (w−1)(h−1) |
+| Custom | width 9–30, height 9–24 | 10 – min((w−1)(h−1), 999) |
 
-Custom input outside those bounds is clamped, as winmine did, not rejected.
+Custom input outside those bounds is clamped, not rejected (`windowing.c:220–223`).
 
-- **First click.** Mines are placed at game start, before the first click, from a seedable RNG.
-  If the first reveal lands on a mine, that mine moves to the first mine-free square scanning
-  row-major from the top-left, as winmine does. Nothing else about the first click is guaranteed:
-  it may land on a number.
-- **Reveal.** Left-click on a covered, unflagged square reveals it. A zero flood-fills: every
-  neighbour of a revealed zero is revealed, recursively. Flags and `?` inside a flood are cleared
-  and revealed; `?` squares are revealable by a direct click, flags are not.
-- **Marks.** Right-click cycles covered → flag → `?` → covered when *Marks (?)* is on (default), and
-  covered ↔ flag when off. Turning Marks off leaves existing `?` on the board.
-- **Chord.** Both buttons released together, or a middle-button release, on a revealed number
-  whose adjacent flag count equals the number reveals every covered, unflagged neighbour. A chord
-  that reveals a mine loses. A chord on an unsatisfied number does nothing.
-- **Press preview.** While the left button is held, the square under the pointer draws sunken;
-  dragging moves the preview; with a chord gesture held the 3×3 block draws sunken. Release
-  outside the board cancels. Flags never draw sunken.
-- **Counter.** Mines − flags, so it can go negative (`-12`, the minus in the first digit); it
-  clamps to the range −99…999 for display.
-- **Timer.** Starts at 1 on the first reveal, ticks once per second, stops at 999. The time
-  recorded for a win is the displayed value.
-- **Loss.** The mine that was revealed is drawn on the `exploded` background; every flag on a
-  non-mine shows the crossed-out mine; every other mine is revealed; flags on mines stay.
+- **Placement and first click.** Mines are placed at game start from a seedable RNG. If the first
+  reveal lands on a mine, that mine moves to the first mine-free square found scanning row-major
+  over rows `0…h−2` and columns `0…w−2` — **the last row and last column are never scanned**
+  (`game.c:551–553`). The clicked square is still a mine when the scan runs, so the mine never
+  lands back on it. If the scan finds no free square (possible when mines = (w−1)(h−1)), the click
+  does nothing: no reveal, and the game stays unstarted. Nothing else about the first click is
+  guaranteed: it may land on a number.
+- **Reveal.** A left release on a covered, unflagged square reveals it. A zero flood-fills: every
+  neighbour of a revealed zero is revealed, recursively; `?` marks inside a flood are cleared and
+  revealed, flags are not touched. `?` squares are revealable by a direct click, flags are not.
+- **Marks.** Right **press** (not release) cycles covered → flag → `?` → covered when *Marks (?)*
+  is on (default), covered ↔ flag when off. Turning Marks off leaves existing `?` on the board.
+- **Chord.** A chord gesture is any of: right pressed while left is held; left pressed while right
+  is held (the right press has already flagged, as above — winmine does the same); middle button;
+  Shift + left (`windowing.c:495–548`). While it is held the 3×3 block under the pointer draws
+  sunken. It fires on the **first** button released: on a revealed number whose adjacent flag
+  count equals the number, every covered, unflagged neighbour is revealed; on anything else
+  nothing happens.
+- **Press preview.** While left is held (no chord), the square under the pointer draws sunken —
+  a `?` square uses the pressed-`?` sprite — and dragging moves the preview. Release outside the
+  board cancels. Flags never draw sunken.
+- **Counter.** Mines − flags, displayed clamped to −99…999 (`-12`, minus in the first digit).
+  *(winmine draws garbage below −99; clamping is Xinye's call.)*
+- **Timer.** Starts at 1 on the first left or middle release **on the board** of a new game, even
+  one that reveals nothing (a release on a flag), ticks once per second, stops at 999. It always
+  stops on a win or loss. *(Deviation: Win95/98 left the timer running after a one-click win;
+  2000 fixed it, and so do we.)* The time recorded for a win is the displayed value.
+- **Loss.** Every mine revealed by the losing action — one for a click, possibly several for a
+  chord (`game.c:505`) — is drawn on the `exploded` background; every flag on a non-mine shows the
+  crossed-out mine; every other mine is revealed; flags on mines stay.
 - **Win.** When every non-mine square is revealed, every remaining mine is auto-flagged and the
   counter reads `000`.
-- **Smiley.** Normal; `o` mouth while any board button is held during play; dead after a loss;
-  sunglasses after a win; drawn pressed while it is itself held. Clicking it starts a new game at
-  the same difficulty.
-- **Best times.** One per standard difficulty, default `999 Anonymous`. A win that beats it asks
-  for a name ("You have the fastest time for beginner level. Please type your name:"). *Best
-  Times…* shows all three with a *Reset Scores* button. Custom games are never recorded.
+- **Smiley.** Normal; `o` mouth while left or middle is held anywhere in the game area (a right
+  press does not change it); dead after a loss; sunglasses after a win; drawn pressed while it is
+  itself held, cancelled by dragging off it. Releasing on it starts a new game at the same
+  difficulty.
+- **Best times.** One per standard difficulty, default `999 Anonymous`. A win **strictly faster**
+  than the record asks for a name ("You have the fastest time for beginner level. Please type
+  your name:"), then shows *Best Times*, as winmine does. *Best Times…* shows all three with a
+  *Reset Scores* button. Custom games are never recorded.
 
 ## 2. Window and chrome
 
-Geometry at scale 1, in pixels, matching winmine:
+**Geometry** at zoom ×1, in logical pixels, from `drawing.c:337–383`. With `xRight = 16·W + 24` and
+`yBottom = 16·H + 67` (the game area's size):
 
-- Cell 16 × 16. LED digit 13 × 23. Smiley button 26 × 26 (24 × 24 face in a 1 px border).
-- Outer frame raised 3 px; margins 12 px left / right, 8 px between panel and board, 12 px bottom
-  — the exact margins are confirmed against a reference screenshot during implementation and
-  live as named constants in one place.
-- Status panel sunken 2 px, 37 px tall: counter (3 digits, sunken 1 px) left, smiley centred,
-  timer right.
-- Board sunken 3 px.
+| Element | Rectangle (left, top → right, bottom) | Bevel |
+|---|---|---|
+| Outer frame | 0, 0 → xRight−1, yBottom−1 | 3 px, raised |
+| Status panel | 9, 9 → xRight−10, 45 | 2 px, sunken |
+| Mine counter | 16, 16 → 56, 39 | 1 px, sunken |
+| Timer | xRight−57, 15 → +40, 39 | 1 px, sunken |
+| Smiley | (xRight−24)/2 − 1, 15 → +25, 40 | 1 px |
+| Board | 9, 52 → xRight−10, yBottom−10 | 3 px, sunken |
+| Cells | origin 12, 55; 16 × 16 each | — |
 
-The window is `set_resizable(False)` at board size × scale; sway floats a toplevel whose minimum
-and maximum sizes match. **Verify this in implementation**; if sway tiles it anyway, the dotfiles
-PR adds `for_window [app_id="swaysweeper"] floating enable`. Either way the view draws the game
-centred in whatever allocation it gets and paints the surround in the `backdrop` slot, so a
-tiled window still looks deliberate.
+LED digits are 13 × 23, drawn at x = 17 / 30 / 43 (counter) and xRight−56 / −43 / −30 (timer);
+the face is 24 × 24 at x = (xRight−24)/2. `drawing.c` subtracts a further `WindowWidthInPixels` from
+the timer's x — that is the Win32 non-client border width leaking into a client coordinate, and it
+is dropped here, which makes the timer mirror the counter as it does on screen. These numbers live
+as named constants in one place, and a test pins them for each standard difficulty.
 
-**Menu bar** (`Gtk.PopoverMenuBar` from a `Gio.Menu`, styled from the slots by a CSS provider so
-it matches the chrome; dialogs keep the system GTK theme):
+**Window.**
+
+- Application id **`io.github.xinye1.swaysweeper`** (`"swaysweeper"` alone fails
+  `Gio.Application.id_is_valid`). GApplication single-instance: a second launch presents the
+  existing window, so two processes never race on the state files.
+- `set_resizable(False)` at game area × zoom. Verified on this machine: sway floats it, draws its
+  own `pixel` border, GTK draws no titlebar, and it resizes when the board shrinks.
+- The view still draws the game centred in whatever allocation it gets and paints the surround in
+  the `backdrop` slot, so a forced tile looks deliberate.
+
+**Crispness.** Cairo `ANTIALIAS_NONE`, every rectangle on whole device pixels. GTK already draws
+in logical pixels, so on this scale-2 display ×1 is 32 device pixels per cell. At a fractional
+output scale, coordinates are snapped to device pixels using `Gdk.Surface.get_scale()`.
+
+**Menu bar** — `Gtk.PopoverMenuBar` from a `Gio.Menu`:
 
 - **Game:** New (F2) · Beginner · Intermediate · Expert · Custom… · Marks (?) · Color · Sound ·
-  Zoom ×1 / ×2 / ×3 · Best Times… · Exit
+  Zoom ×2 · Best Times… · Exit
 - **Help:** Keys… · About swaysweeper
 
-*Color* keeps its original meaning: unticked renders the built-in monochrome slot set. *Zoom* is
-an integer scale (default: the monitor's scale factor, rounded), rendered with nearest-neighbour
-so the pixel art stays crisp.
+Its colours come from the slots through a CSS provider whose selectors are scoped to a class on the
+menu bar, so dialogs keep the system GTK theme. *Color* keeps winmine's meaning: unticked renders
+the built-in monochrome set.
+
+**Zoom** is ×1 (default) or ×2, and ×2 is offered only while the window at ×2 fits the monitor's
+logical work area; a difficulty change that would no longer fit drops back to ×1.
 
 ## 3. Rendering and theming
 
 **Sprites as text.** Every glyph is pixel art written as a list of strings in `sprites.py`; each
 character names a colour **slot**, `.` is transparent. Sprites: numbers 1–8, mine, flag, `?`,
-crossed mine, the five faces, LED digits 0–9 and minus (segments drawn as `led_on` / `led_off`).
-Bevels, cell grid and covered squares are drawn as rectangles from the same slots. Painting is one
-Cairo rectangle per run of equal pixels at `scale`; no bitmaps ship.
+pressed `?`, crossed mine, the five faces, LED digits 0–9 and minus (segments drawn as
+`led_on` / `led_off`). Bevels, the cell grid and covered squares are rectangles from the same
+slots. Painting is one Cairo rectangle per run of equal pixels; no bitmaps ship.
 
-**Slots**
+**Slots and the Win95 set.** Every slot has a Win95 value; that set is the built-in default.
 
-| Group | Slots |
+| Slot | Used for | Win95 |
+|---|---|---|
+| `face` | chrome and covered squares | `#c0c0c0` |
+| `light` | bevel highlight | `#ffffff` |
+| `shadow` | bevel shadow | `#808080` |
+| `grid` | lines between revealed squares | `#808080` |
+| `revealed` | revealed squares | `#c0c0c0` |
+| `backdrop` | surround when the allocation exceeds the game | `#008080` |
+| `text` | menu bar text | `#000000` |
+| `led_bg` / `led_on` / `led_off` | counter and timer | `#000000` / `#ff0000` / `#800000` |
+| `mine` / `glint` | mine body / its highlight | `#000000` / `#ffffff` |
+| `flag` / `ink` | flag cloth / flag pole, base and the `?` glyph | `#ff0000` / `#000000` |
+| `exploded` | background of a mine that ended the game; the cross | `#ff0000` |
+| `smiley` / `smiley_ink` | face / its features | `#ffff00` / `#000000` |
+| `cursor` | keyboard cursor outline | `#ff00ff` |
+| `num1` … `num8` | numbers | `#0000ff` `#008000` `#ff0000` `#000080` `#800000` `#008080` `#000000` `#808080` |
+
+**Monochrome set** (built-in; *Color* off): black, white and greys only.
+
+**Theme file.** `~/.config/swaysweeper/colors.gen.toml`, a flat table `slot = "#rrggbb"` (`#rgb`
+also accepted).
+
+- **First load:** a slot missing or invalid falls back to its Win95 value, one stderr line each.
+- **Live reload:** a slot missing or invalid **keeps its current colour**. A missing file, or a
+  parse error, keeps everything current.
+- Unknown keys are reported, never silently used.
+
+**Contrast floors** — checked against the theme file, not the built-in sets (Win95's own grey 8
+would fail them):
+
+| Pair | Floor |
 |---|---|
-| Chrome | `face`, `light`, `shadow`, `grid`, `revealed`, `backdrop`, `text` |
-| LED | `led_bg`, `led_on`, `led_off` |
-| Pieces | `mine`, `flag`, `exploded`, `cursor` |
-| Numbers | `num1` … `num8` |
+| each `numN` vs `revealed` | 4.5 : 1 (the dotfiles text floor) |
+| `light` vs `shadow` | 3 : 1 (the bevel is what makes it read as 3D) |
+| `mine` vs `revealed`; `flag` vs `face`; `ink` vs `face`; `smiley_ink` vs `smiley`; `led_on` vs `led_bg` | 3 : 1 |
+| `cursor` vs `revealed` and vs `face` | 3 : 1 |
+| `cursor` vs every `numN` | must differ |
 
-**Colour sets**
+**`swaysweeper --check-colors FILE`** validates a theme file without opening a window. It exits
+non-zero on an unknown, missing or invalid slot, or on any floor in the table above, and prints
+each problem. It is what the dotfiles check (§4) runs; it exists because a misspelled slot would
+otherwise silently fall back, the exact failure the dotfiles' CLAUDE.md warns about for GTK, tmux
+and yazi.
 
-- **Win95** (built-in default): `face #c0c0c0`, `light #ffffff`, `shadow #808080`, `revealed`
-  `#c0c0c0`, `led_bg #000000`, `led_on #ff0000`, `led_off #800000`, `exploded #ff0000`, numbers
-  1 blue `#0000ff`, 2 green `#008000`, 3 red `#ff0000`, 4 navy `#000080`, 5 maroon `#800000`,
-  6 teal `#008080`, 7 black `#000000`, 8 grey `#808080`.
-- **Monochrome** (built-in; used when *Color* is off): black, white and greys only.
-- **Theme** (from file, below), used when present and *Color* is on.
+**Live repaint.** A `Gio.FileMonitor` watches `~/.config/swaysweeper/`. `theme` rewrites the
+file with `Path.write_text` (truncate, then write), and a read between the two sees an empty —
+valid — TOML file. So the game re-parses only on `CHANGES_DONE_HINT` (close-after-write) for
+`colors.gen.toml`, never on `CHANGED`. Verified on this machine: watching through the folded stow
+symlink works; a directory missing at launch is picked up by GLib's polling a few seconds after it
+appears; an **unfolded** package (the file a symlink into the repo) delivers no events, hence
+"folded is required" in §4. A successful parse redraws everything and updates the menu-bar CSS.
 
-**Theme file.** `~/.config/swaysweeper/colors.gen.toml`, a flat table of `slot = "#rrggbb"`.
-Accepted values are `#rgb` and `#rrggbb`; anything else is ignored for that slot. A slot
-missing or invalid in the file falls back to its Win95 value and is reported once on stderr.
-
-**Live repaint.** A `Gio.FileMonitor` watches the file's directory. `theme` overwrites the file in
-place, so a change event is followed by a 150 ms debounce, then a re-parse. A parse failure or a
-missing file **keeps the current colours** and waits for the next event — never a crash, never a
-mid-game fall back to Win95 because of a half-written file. A successful parse triggers a full
-redraw and a menu-bar CSS update.
-
-**Never written by the game.** `~/.config/swaysweeper/` may be a stow fold into the dotfiles repo;
-the game only reads it.
+**Never written by the game.** `~/.config/swaysweeper/` is a stow fold into the dotfiles repo; the
+game only reads it.
 
 ## 4. Dotfiles side (separate PR in `~/repos/dotfiles`)
 
-- New stow package `swaysweeper/.config/swaysweeper/colors.gen.toml.tmpl`, mapping slots to roles,
-  e.g. `face = "{{surface}}"`, `light = "{{muted}}"`, `shadow = "{{desktop}}"`,
-  `revealed = "{{bg}}"`, `grid = "{{sel}}"`, `backdrop = "{{desktop}}"`, `text = "{{fg}}"`,
-  `led_bg = "{{desktop}}"`, `led_on = "{{critical}}"`, `led_off = "{{surface}}"`, `exploded = "{{critical}}"`,
-  `cursor = "{{accent}}"`.
-- Numbers from the ANSI ramp: 1 `ansi_normal_blue`, 2 `ansi_normal_green`, 3 `ansi_normal_red`,
-  4 `ansi_normal_magenta`, 5 `ansi_normal_yellow`, 6 `ansi_normal_cyan`, 7 `fg`, 8 `dim`. The
-  template comment explains the departure: winmine's navy, maroon and black vanish on a dark
-  background. The exact role choices are judged by rendering under both palettes, not chosen
-  on paper.
-- README package table row; PLAYBOOK §5.2 entry — **folded**, safe because the game never writes
-  into `~/.config/swaysweeper/`.
-- Confirm (do not assume) that `tests/theme_test.sh`'s hex guard and `check_consumers.sh` pick the
-  new template up; `stow -n -v swaysweeper` before `stow swaysweeper`.
-- Optionally a row in `menu.toml` (Super+Space palette), with `tests/menu_test.py` run after.
+- New stow package `swaysweeper/.config/swaysweeper/colors.gen.toml.tmpl` mapping **every** slot
+  to a role. Role choices are made by rendering under both palettes and must pass
+  `--check-colors` under both. Starting points: chrome from `surface` / `bg` / `desktop` /
+  `sel`, `light` from a role bright enough for the 3:1 bevel floor (`muted` is not —
+  ~1.4:1 measured), LEDs `critical` on `desktop`, numbers from the ANSI ramp, preferring the
+  `bright_*` entries where a `normal_*` misses 4.5:1 (`ansi_normal_red` measures 2.69:1 on
+  gruvbox `bg`), `cursor` not equal to any number (nord's `accent` equals `ansi_normal_cyan`).
+  The template comment explains each departure from winmine's colours.
+- README package table row; PLAYBOOK §5.2 entry — **folded, and folding is required**: live
+  repaint sees no events through an unfolded package, and the game never writes there.
+  `setup.sh` must not pre-create `~/.config/swaysweeper`.
+- **A check that runs `swaysweeper --check-colors` against the template rendered under each
+  palette.** The existing guards don't cover it: `check_hex.py` skips `*.tmpl`, and
+  `check_consumers.sh` is a hand-written list. The check reports `skip` (not a pass) when
+  swaysweeper is not installed. Where it lives — `check_consumers.sh` or `theme_test.sh` — is
+  settled in that PR's plan by reading both.
+- `stow -n -v swaysweeper` before `stow swaysweeper`; `tests/theme_test.sh` after.
 
 ## 5. State
 
@@ -170,12 +233,14 @@ the game only reads it.
 - `game.json` — a game in progress.
 
 All writes are atomic (temp file in the same directory, `fsync`, `rename`). An unreadable or
-invalid file is renamed `<name>.bad` and defaults are used; the game always starts.
+invalid file — including one from an incompatible version — is renamed `<name>.bad` and defaults
+are used; the game always starts.
 
-**Resume.** On close, a game in the *playing* state is saved (board, marks, elapsed seconds,
-difficulty). On launch it is restored with the timer **paused**; the clock resumes on the first
-board input, so time spent away is never counted. Won, lost and not-yet-started games are not
-saved; a restored game is deleted from disk once it ends.
+**Resume.** `game.json` is rewritten after **every** board change and every timer tick that changes
+the displayed second (it is a few kilobytes), so logout, sway exiting or SIGTERM lose at most a
+second — not only a clean close. On launch, a game in the *playing* state is restored with the
+timer **paused**; it resumes on the first board input, so time spent away is never counted. When a
+game ends, or a new one starts, `game.json` is deleted.
 
 ## 6. Input
 
@@ -183,16 +248,17 @@ saved; a restored game is deleted from disk once it ends.
 
 **Keyboard** (extra; invisible until used): the first direction key places a cursor in the board's
 centre, later ones move it. Arrows / `h j k l` move; Space or Enter reveals (or chords on a revealed
-number); `f` flags / cycles marks; `c` chords; `F2` new game; `?` keys help; Ctrl+Q exits. The
-cursor draws as a 1-pixel-scaled outline in the `cursor` slot. Any mouse motion over the board
-hides it.
+number); `f` flags / cycles marks; `c` chords; `F2` new game; `?` Keys help; Ctrl+Q exits. The
+cursor is a 1-logical-pixel outline in the `cursor` slot. Mouse motion over the board hides it.
+Keyboard actions follow the same rules as the mouse, including the timer start.
 
 ## 7. Sound (off by default, as in winmine)
 
 Three square-wave sounds — tick, win, lose — generated with the stdlib `wave` module into
 `$XDG_CACHE_HOME/swaysweeper/` on first use and played by `pw-play` (GTK has no media backend
-installed here). Played fire-and-forget: `subprocess.Popen` with stdin/stdout/stderr on
-`DEVNULL`, never a pipe. If `pw-play` is absent, the *Sound* item is disabled.
+installed here). Fire-and-forget: `subprocess.Popen` with stdin/stdout/stderr on `DEVNULL`, never a
+pipe. If `pw-play` is absent the *Sound* item is disabled; a failed play is silent and never blocks
+the UI.
 
 ## 8. Code structure
 
@@ -200,58 +266,71 @@ installed here). Played fire-and-forget: `subprocess.Popen` with stdin/stdout/st
 swaysweeper/            package
   board.py              pure game logic; no GTK
   game.py               session: state, timer value, difficulty, (de)serialise
+  geometry.py           §2 constants and layout maths; no GTK
   sprites.py            text pixel art + paint(cr, sprite, x, y, scale, colours)
-  theme.py              slots, Win95 + mono sets, parser, file watcher
+  theme.py              slots, Win95 + mono sets, parser, contrast check, file watcher
   store.py              atomic JSON state, .bad on corruption
   sound.py              wav generation + pw-play
-  view.py               DrawingArea: layout, input, face state, cursor
-  app.py                Gtk.Application, menu, dialogs, timer tick
+  view.py               DrawingArea: input, face state, cursor, painting
+  app.py                Gtk.Application, menu, dialogs, timer tick, --check-colors
 bin/swaysweeper         launcher, #!/usr/bin/python3 (the mise shim's python lacks gi)
-data/swaysweeper.desktop
+data/io.github.xinye1.swaysweeper.desktop.in
 tests/                  unittest
 Makefile                test, install, uninstall
 ```
 
-**Data flow:** input → `view` → `game` / `board` → redraw. Timer tick → `game` → redraw of the
-timer region. File monitor → `theme` → full redraw. Window close → `store.save`.
+**Data flow:** input → `view` → `game` / `board` → redraw + `store.save`. Timer tick → `game` →
+timer redraw (+ save on a new second). File monitor → `theme` → full redraw.
 
-`board` and `game` import nothing from GTK, so all rule logic is testable without a display.
+`board`, `game`, `geometry`, `theme` (minus the watcher) and `store` import nothing from GTK, so
+all rule, layout and colour logic is testable without a display.
 
 ## 9. Error handling
 
 | Failure | Behaviour |
 |---|---|
-| Theme file missing / malformed / half-written | Keep current colours; next event retries |
-| Theme slot missing or invalid | Win95 value for that slot; one stderr line |
-| State file corrupt | Renamed `.bad`; defaults; game starts |
+| Theme file missing / malformed / half-written | Keep current colours; next close-after-write retries |
+| Theme slot missing or invalid | First load: Win95 value + stderr line. Reload: keep current |
+| State file corrupt or wrong version | Renamed `.bad`; defaults; game starts |
 | `pw-play` missing or fails | Sound item disabled / silent; never blocks the UI |
-| Saved game from an incompatible version | Treated as corrupt (`.bad`) |
+| Session ends without a clean close | `game.json` is at most one second old |
 
 ## 10. Testing
 
-`python3 -m unittest` under `/usr/bin/python3`; no display needed.
+`/usr/bin/python3 -m unittest`; no display needed.
 
-- **board:** seeded layouts; first-click relocation and its scan order; flood-fill at edges and
-  corners, clearing marks; chord on satisfied / unsatisfied numbers; chord onto a mine loses;
-  wrong-flag marking on loss; auto-flag on win; negative counter; Custom clamping.
-- **game:** timer start at 1 on first reveal, cap at 999; serialise / restore round trip; restored
-  game timer paused until input.
-- **theme:** missing file; partial file per-slot fallback; malformed TOML keeps the previous set;
-  `#rgb` / `#rrggbb` accepted, others rejected.
-- **store:** round trip; corrupt file moved to `.bad`; atomic write leaves no partial file.
+- **board:** seeded layouts; first-click relocation — scan order, last row/column excluded, the
+  clicked square never chosen, no-free-square click ignored, a mined top-left first click;
+  flood-fill at edges and corners, clearing `?` but not flags; chord on satisfied / unsatisfied
+  numbers; a chord revealing two mines marks both exploded; wrong-flag marking on loss; auto-flag
+  on win; counter clamped at −99.
+- **game:** timer starts at 1 on the first board release, including one on a flag; caps at 999;
+  stops on a one-click win; serialise / restore round trip; restored timer paused until input.
+- **geometry:** the §2 rectangles for each standard difficulty; Zoom ×2 offered only when it fits.
+- **theme:** first load vs reload fallback rules; empty file on reload keeps colours; `#rgb` /
+  `#rrggbb` accepted, others rejected; unknown key reported; each contrast floor fails a file
+  built to violate it and passes the Win95-free fixture.
+- **store:** round trip; corrupt and wrong-version files moved to `.bad`; atomic write leaves no
+  partial file.
 - **sprites:** every sprite rectangular, expected size, only known slot characters.
 - **render smoke:** a lost Expert board painted to a Cairo `ImageSurface` under each colour set;
-  the exploded cell's pixel equals the `exploded` colour, a revealed number's pixel equals its
-  `numN` colour.
-- **Mutation check:** key assertions are shown to go red against a deliberately broken copy (the
-  first-click rule, the chord flag count, the timer cap) — a suite that cannot fail proves nothing.
+  the exploded cell's pixel equals `exploded`, a revealed number's pixel equals its `numN`.
+- **Mutation check:** key assertions are shown to go red against a deliberately broken copy — the
+  relocation scan bounds, the chord flag count, the timer cap, the reload keep-current rule.
 
-Manual check before calling it done: play each difficulty; `theme nord` then `theme gruvbox` with a
-game open; close mid-game and relaunch.
+**Manual, before calling it done:** play each difficulty with mouse and keyboard, including every
+chord gesture; `theme nord` then `theme gruvbox` with a game open (no Win95 flash); close mid-game
+and relaunch; `kill` the process mid-game and relaunch; launch from fuzzel.
 
 ## 11. Install
 
-`make install`: `bin/swaysweeper` to `~/.local/bin/`, the package to
-`~/.local/share/swaysweeper/`, the desktop entry to `~/.local/share/applications/`
-(`Categories=Game;LogicGame;`, `Keywords=minesweeper;mines;game;`). `make uninstall` reverses it.
-Dependencies (already installed): `gtk4`, `python-gobject`, `python-cairo`; `pipewire` for sound.
+`make install`:
+
+- the package to `~/.local/share/swaysweeper/`, the launcher to `~/.local/bin/swaysweeper`;
+- the desktop entry to `~/.local/share/applications/io.github.xinye1.swaysweeper.desktop`, with
+  **`Exec=` an absolute path** (`$HOME` expanded at install): the sway session's `PATH` has no
+  `~/.local/bin`, so a bare `swaysweeper` never resolves from fuzzel or Super+Space.
+  `Categories=Game;LogicGame;`, `Keywords=minesweeper;mines;game;`.
+
+`make uninstall` reverses it. Dependencies (already installed): `gtk4`, `python-gobject`,
+`python-cairo`; `pipewire` for sound.
