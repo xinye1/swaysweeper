@@ -5,6 +5,7 @@ import time
 import unittest
 import wave
 from pathlib import Path
+from unittest import mock
 
 from swaysweeper import sound
 
@@ -47,6 +48,12 @@ class Play(unittest.TestCase):
         self.assertFalse(s.available)
         s.play("win")
         self.assertFalse((self.root / "cache").exists())
+
+    def test_an_interrupted_write_leaves_no_cached_wav(self):
+        s = sound.Sound(self.root / "cache", player=str(self.root / "missing"))
+        with mock.patch.object(wave.Wave_write, "writeframes", side_effect=OSError("disk full")):
+            s.play("tick")
+        self.assertEqual(list((self.root / "cache").iterdir()), [])
 
     def test_a_failing_player_never_raises(self):
         s = sound.Sound(self.root / "cache", player=str(self.root / "missing"))

@@ -4,9 +4,11 @@ GTK has no media backend on this machine, so playback is a child process —
 fire-and-forget, every stream on DEVNULL, never a pipe.
 """
 
+import os
 import shutil
 import struct
 import subprocess
+import tempfile
 import wave
 from pathlib import Path
 
@@ -51,7 +53,14 @@ class Sound:
         try:
             if not path.exists():
                 self.cache_dir.mkdir(parents=True, exist_ok=True)
-                write_wav(path, notes)
+                fd, tmp = tempfile.mkstemp(dir=self.cache_dir, prefix=f".{name}.", suffix=".tmp")
+                os.close(fd)
+                try:
+                    write_wav(tmp, notes)
+                    os.replace(tmp, path)
+                except BaseException:
+                    Path(tmp).unlink(missing_ok=True)
+                    raise
             subprocess.Popen([self.player, str(path)], stdin=subprocess.DEVNULL,
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              start_new_session=True)
