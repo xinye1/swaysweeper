@@ -1,0 +1,14 @@
+#!/usr/bin/python3
+# /usr/bin/python3 on purpose: it is the interpreter with PyGObject; the mise
+# shim's python on PATH is not.
+import sys
+from pathlib import Path
+
+_repo = Path(__file__).resolve().parent.parent
+_lib = _repo if (_repo / "swaysweeper" / "__init__.py").is_file() \
+    else Path.home() / ".local" / "share" / "swaysweeper"
+sys.path.insert(0, str(_lib))
+
+from swaysweeper.cli import main  # noqa: E402
+
+sys.exit(main())
