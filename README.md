@@ -12,6 +12,32 @@ the palette switches. Inspired by [omasweeper](https://github.com/jankeesvw/omas
 - Extras that stay out of the way: vim/arrow keyboard play (`?` lists the keys),
   Zoom ×2 when it fits, and a game in progress survives closing — or a crash.
 
+The same lost board under the built-in Windows 95 colours and the two dotfiles
+palettes — drawn from the palette rather than pinned, which is the point:
+
+| Windows 95 | nord | gruvbox |
+| --- | --- | --- |
+| ![Windows 95](screenshots/win95.png) | ![nord](screenshots/nord.png) | ![gruvbox](screenshots/gruvbox.png) |
+
+## Play
+
+| Mouse | |
+| --- | --- |
+| Left click | open a square |
+| Right click | flag, then `?`, then clear (on the press, as winmine) |
+| Both buttons, middle, or Shift+left | open around a satisfied number |
+| Smiley | new game |
+
+| Keyboard | |
+| --- | --- |
+| Arrows or `h j k l` | move the cursor (the first press puts it in the middle) |
+| Space or Enter | open — or, on a number, open around it |
+| `f` | flag, then `?`, then clear |
+| `c` | open around a number |
+| F2 | new game |
+| `?` | list the keys |
+| Ctrl+Q | exit |
+
 ## Install
 
     make install      # ~/.local/{bin,share}; a desktop entry with an absolute Exec=
@@ -28,6 +54,12 @@ renders it from `palettes.toml`. With no file it is Windows 95 grey.
     swaysweeper --check-colors FILE   # unknown/missing/invalid slots, contrast floors
 
 The slots and floors are in `docs/specs/2026-10-09-swaysweeper-design.md` §3.
+
+## Screenshots
+
+    tools/screenshots.py nord=nord.toml gruvbox=gruvbox.toml
+
+renders `screenshots/*.png` offscreen from theme files (no window opens).
 
 ## State
 
