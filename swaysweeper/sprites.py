@@ -2,7 +2,7 @@
 transparent. Nothing here is a bitmap, so recolouring is a dictionary lookup.
 """
 
-from .theme import rgb
+from .colours import rgb
 
 LEGEND = {
     **{str(n): f"num{n}" for n in range(1, 9)},

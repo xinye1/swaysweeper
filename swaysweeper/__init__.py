@@ -1,3 +1,3 @@
-"""swaysweeper — the classic Windows Minesweeper, in your palette's colours."""
+"""swaysweeper — the classic Windows Minesweeper."""
 
 __version__ = "0.1.0"

@@ -9,7 +9,7 @@ import cairo
 
 from . import geometry as G
 from . import sprites
-from .theme import rgb
+from .colours import rgb
 
 _BEVEL = {"raised": ("light", "shadow"), "sunken": ("shadow", "light"),
           "flat": ("shadow", "shadow")}

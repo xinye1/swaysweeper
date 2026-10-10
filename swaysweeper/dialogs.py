@@ -124,7 +124,7 @@ def keys_help(parent):
 def about(parent):
     Gtk.AboutDialog(
         transient_for=parent, modal=True, program_name="swaysweeper", version=__version__,
-        comments="The classic Windows Minesweeper, in your palette's colours.\n"
+        comments="The classic Windows Minesweeper.\n"
                  "Inspired by omasweeper (github.com/jankeesvw/omasweeper).",
         license_type=Gtk.License.MIT_X11,
     ).present()

@@ -12,7 +12,7 @@ from . import geometry as G  # noqa: E402
 from . import render  # noqa: E402
 from .board import REVEALED  # noqa: E402
 from .gestures import Gestures  # noqa: E402
-from .theme import rgb  # noqa: E402
+from .colours import rgb  # noqa: E402
 
 _DIRS = {"Left": (-1, 0), "h": (-1, 0), "Right": (1, 0), "l": (1, 0),
          "Up": (0, -1), "k": (0, -1), "Down": (0, 1), "j": (0, 1)}

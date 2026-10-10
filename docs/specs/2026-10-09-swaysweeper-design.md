@@ -2,6 +2,10 @@
 
 *2026-10-09. Status: revised after an adversarial review; awaiting Xinye's review of this document.*
 
+> **Superseded in part (2026-10-10):** theme-awareness was removed. The game draws only winmine's
+> own colours — Windows 95 with Color on, monochrome with it off. There is no theme file, watcher,
+> `--check-colors` or dotfiles template; the parts of §0 and §3–§4 about palettes no longer apply.
+
 A faithful clone of the classic Windows Minesweeper (Windows 95–2000 `winmine`), drawn in the
 colours of the active dotfiles palette and recoloured live when the palette switches.
 Inspiration: [omasweeper](https://github.com/jankeesvw/omasweeper), a Minesweeper that draws itself
