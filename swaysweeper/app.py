@@ -1,4 +1,4 @@
-"""The GTK application: window, menu, timer, persistence, live theme."""
+"""The GTK application: window, menu, timer, persistence."""
 
 import sys
 from pathlib import Path
@@ -9,7 +9,7 @@ gi.require_version("Gdk", "4.0")
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import dialogs, geometry, store, theme  # noqa: E402
+from . import colours, dialogs, geometry, store  # noqa: E402
 from .board import LOST, PLAYING, READY, WON  # noqa: E402
 from .game import DIFFICULTIES, Game  # noqa: E402
 from .sound import Sound  # noqa: E402
@@ -24,10 +24,6 @@ class App(Gtk.Application):
         self.store = store.Store(store.state_dir())
         self.settings = self.store.load("settings", store.settings_from) or store.default_settings()
         self.best = self.store.load("best", store.best_from) or store.default_best()
-        self.theme_path = Path(GLib.get_user_config_dir()) / "swaysweeper" / "colors.gen.toml"
-        self.theme_colours, problems = theme.load_first(self.theme_path)
-        for p in problems:
-            print(f"swaysweeper: {p}", file=sys.stderr)
         self.sound = Sound(Path(GLib.get_user_cache_dir()) / "swaysweeper")
         saved = self.store.load("game", Game.from_dict)
         if saved is not None and saved.status == PLAYING:
@@ -42,14 +38,13 @@ class App(Gtk.Application):
         self.window = None
         self.view = None
         self._timer = 0
-        self._watcher = None
         self._css = None
 
     # --- derived -------------------------------------------------------------
 
     @property
     def colours(self):
-        return self.theme_colours if self.settings["color"] else theme.MONO
+        return colours.WIN95 if self.settings["color"] else colours.MONO
 
     @property
     def zoom(self):
@@ -67,7 +62,6 @@ class App(Gtk.Application):
             Gdk.Display.get_default(), self._css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self._update_css()
         self._install_actions()
-        self._watcher = theme.Watcher(self.theme_path, self._theme_changed)
 
     def do_activate(self):
         if self.window is None:
@@ -304,16 +298,7 @@ class App(Gtk.Application):
         else:
             self.store.delete("game")
 
-    # --- theme ---------------------------------------------------------------
-
-    def _theme_changed(self):
-        new = theme.reload(self.theme_path, self.theme_colours)
-        if new is None or new == self.theme_colours:
-            return
-        self.theme_colours = new
-        self._update_css()
-        if self.view is not None:
-            self.view.queue_draw()
+    # --- colours -------------------------------------------------------------
 
     def _update_css(self):
         c = self.colours

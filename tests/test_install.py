@@ -4,8 +4,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.fixtures import NORD, toml
-
 ROOT = Path(__file__).resolve().parent.parent
 ID = "io.github.xinye1.swaysweeper"
 
@@ -23,11 +21,11 @@ class Install(unittest.TestCase):
             self.assertIn("Keywords=minesweeper;mines;game;", desktop)
 
             # The installed launcher runs from outside the repo, from its own copy.
-            colours = Path(home, "c.toml")
-            colours.write_text(toml(NORD))
-            r = subprocess.run([f"{home}/.local/bin/swaysweeper", "--check-colors", str(colours)],
+            # An argument stops it at the usage line, before any window opens.
+            r = subprocess.run([f"{home}/.local/bin/swaysweeper", "--version"],
                                env=env, cwd=home, capture_output=True, text=True, timeout=30)
-            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(r.returncode, 2, r.stderr)
+            self.assertIn("usage", r.stderr)
 
             subprocess.run(["make", "-C", str(ROOT), "uninstall"], env=env, check=True,
                            capture_output=True)

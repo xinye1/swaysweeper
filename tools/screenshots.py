@@ -1,12 +1,8 @@
 #!/usr/bin/python3
-"""Render the README's screenshots: one lost Intermediate board, per colour set.
+"""Render the README's screenshot, screenshots/win95.png: one lost Intermediate board.
 
-    tools/screenshots.py [NAME=colors.toml ...]
-
-Always writes screenshots/win95.png; each NAME=FILE adds screenshots/NAME.png
-drawn from that theme file (render one with dotfiles' `theme`, or point at
-~/.config/swaysweeper/colors.gen.toml). Offscreen Cairo, so no window opens;
-the board is the game area only, without the menu bar or sway's border.
+Offscreen Cairo, so no window opens; the board is the game area only,
+without the menu bar or sway's border.
 """
 
 import random
@@ -19,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from swaysweeper import geometry as G  # noqa: E402
-from swaysweeper import render, theme  # noqa: E402
+from swaysweeper import colours, render  # noqa: E402
 from swaysweeper.board import COVERED, REVEALED, Board  # noqa: E402
 from swaysweeper.game import Game  # noqa: E402
 
@@ -51,27 +47,20 @@ def lost_game():
     return game
 
 
-def shoot(game, colours, out):
+def shoot(game, palette, out):
     lay = G.layout(game.board.width, game.board.height)
     surface = cairo.ImageSurface(cairo.FORMAT_RGB24, lay.width * ZOOM, lay.height * ZOOM)
     cr = cairo.Context(surface)
     cr.scale(ZOOM, ZOOM)
-    render.draw(cr, game, colours, face="dead")
+    render.draw(cr, game, palette, face="dead")
     out.parent.mkdir(exist_ok=True)
     surface.write_to_png(str(out))
     print(out.relative_to(ROOT))
 
 
-def main(argv):
-    game = lost_game()
-    shoot(game, theme.WIN95, ROOT / "screenshots" / "win95.png")
-    for arg in argv:
-        name, _, path = arg.partition("=")
-        colours, problems = theme.load_first(path)
-        if problems:
-            sys.exit(f"{path}: " + "; ".join(problems))
-        shoot(game, colours, ROOT / "screenshots" / f"{name}.png")
+def main():
+    shoot(lost_game(), colours.WIN95, ROOT / "screenshots" / "win95.png")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    main()

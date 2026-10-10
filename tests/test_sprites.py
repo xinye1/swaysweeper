@@ -2,7 +2,7 @@ import unittest
 
 import cairo
 
-from swaysweeper import sprites, theme
+from swaysweeper import colours, sprites
 from tests.fixtures import pixel
 
 
@@ -53,9 +53,9 @@ class Paint(unittest.TestCase):
         cr.set_source_rgb(1, 1, 1)
         cr.paint()
         cr.set_antialias(cairo.ANTIALIAS_NONE)
-        sprites.paint(cr, ["11."], 0, 0, theme.WIN95)
-        self.assertEqual(pixel(surf, 0, 0), theme.WIN95["num1"])
-        self.assertEqual(pixel(surf, 1, 0), theme.WIN95["num1"])
+        sprites.paint(cr, ["11."], 0, 0, colours.WIN95)
+        self.assertEqual(pixel(surf, 0, 0), colours.WIN95["num1"])
+        self.assertEqual(pixel(surf, 1, 0), colours.WIN95["num1"])
         self.assertEqual(pixel(surf, 2, 0), "#ffffff")
 
 

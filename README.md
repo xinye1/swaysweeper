@@ -1,8 +1,7 @@
 # swaysweeper
 
-The classic Windows Minesweeper — Windows 95–2000 `winmine`, rules and all —
-drawn in the colours of the active dotfiles palette, and recoloured live when
-the palette switches. Inspired by [omasweeper](https://github.com/jankeesvw/omasweeper).
+The classic Windows Minesweeper — Windows 95–2000 `winmine`, rules, look and
+colours and all. Inspired by [omasweeper](https://github.com/jankeesvw/omasweeper).
 
 - Beginner, Intermediate, Expert and Custom; Marks (?), Color, Best Times.
 - winmine's rules: the first-click mine moves to the top-left-most free square
@@ -12,12 +11,7 @@ the palette switches. Inspired by [omasweeper](https://github.com/jankeesvw/omas
 - Extras that stay out of the way: vim/arrow keyboard play (`?` lists the keys),
   Zoom ×2 when it fits, and a game in progress survives closing — or a crash.
 
-The same lost board under the built-in Windows 95 colours and the two dotfiles
-palettes — drawn from the palette rather than pinned, which is the point:
-
-| Windows 95 | nord | gruvbox |
-| --- | --- | --- |
-| ![Windows 95](screenshots/win95.png) | ![nord](screenshots/nord.png) | ![gruvbox](screenshots/gruvbox.png) |
+![A lost Intermediate game](screenshots/win95.png)
 
 ## Play
 
@@ -45,21 +39,11 @@ palettes — drawn from the palette rather than pinned, which is the point:
 
 Needs `gtk4`, `python-gobject`, `python-cairo`; `pipewire` (`pw-play`) for sound.
 
-## Colours
+## Screenshot
 
-The game reads `~/.config/swaysweeper/colors.gen.toml` — a flat table of
-`slot = "#rrggbb"` — and watches it. In this setup the dotfiles repo's `theme`
-renders it from `palettes.toml`. With no file it is Windows 95 grey.
+    tools/screenshots.py
 
-    swaysweeper --check-colors FILE   # unknown/missing/invalid slots, contrast floors
-
-The slots and floors are in `docs/specs/2026-10-09-swaysweeper-design.md` §3.
-
-## Screenshots
-
-    tools/screenshots.py nord=nord.toml gruvbox=gruvbox.toml
-
-renders `screenshots/*.png` offscreen from theme files (no window opens).
+renders `screenshots/win95.png` offscreen (no window opens).
 
 ## State
 

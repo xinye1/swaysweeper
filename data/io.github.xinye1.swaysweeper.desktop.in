@@ -2,7 +2,7 @@
 Type=Application
 Name=swaysweeper
 GenericName=Minesweeper
-Comment=The classic Windows Minesweeper, in your palette's colours
+Comment=The classic Windows Minesweeper
 Exec=@BINDIR@/swaysweeper
 Terminal=false
 Categories=Game;LogicGame;

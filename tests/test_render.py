@@ -3,10 +3,10 @@ import unittest
 import cairo
 
 from swaysweeper import geometry as G
-from swaysweeper import render, sprites, theme
+from swaysweeper import colours, render, sprites
 from swaysweeper.board import Board
 from swaysweeper.game import Game
-from tests.fixtures import NORD, pixel
+from tests.fixtures import pixel
 
 
 def paint(game, colours, **kw):
@@ -46,62 +46,64 @@ class Text(unittest.TestCase):
 
 class Chrome(unittest.TestCase):
     def test_frame_is_raised_and_board_sunken(self):
-        surf = paint(Game.new("beginner"), theme.WIN95)
-        self.assertEqual(pixel(surf, 0, 0), theme.WIN95["light"])
-        self.assertEqual(pixel(surf, 167, 210), theme.WIN95["shadow"])
-        self.assertEqual(pixel(surf, 9, 52), theme.WIN95["shadow"])
-        self.assertEqual(pixel(surf, 158, 201), theme.WIN95["light"])
+        surf = paint(Game.new("beginner"), colours.WIN95)
+        self.assertEqual(pixel(surf, 0, 0), colours.WIN95["light"])
+        self.assertEqual(pixel(surf, 167, 210), colours.WIN95["shadow"])
+        self.assertEqual(pixel(surf, 9, 52), colours.WIN95["shadow"])
+        self.assertEqual(pixel(surf, 158, 201), colours.WIN95["light"])
 
     def test_covered_cell_is_raised(self):
-        surf = paint(Game.new("beginner"), theme.WIN95)
+        surf = paint(Game.new("beginner"), colours.WIN95)
         x, y = cell_origin(0, 0)
-        self.assertEqual(pixel(surf, x, y), theme.WIN95["light"])
-        self.assertEqual(pixel(surf, x + 8, y + 8), theme.WIN95["face"])
-        self.assertEqual(pixel(surf, x + 15, y + 15), theme.WIN95["shadow"])
+        self.assertEqual(pixel(surf, x, y), colours.WIN95["light"])
+        self.assertEqual(pixel(surf, x + 8, y + 8), colours.WIN95["face"])
+        self.assertEqual(pixel(surf, x + 15, y + 15), colours.WIN95["shadow"])
 
     def test_led_digits_drawn(self):
-        surf = paint(Game.new("beginner"), theme.WIN95)
+        surf = paint(Game.new("beginner"), colours.WIN95)
         lay = G.layout(9, 9)
         # counter "010": the middle digit's top segment (a) is lit, at (x+2, DIGIT_Y+1)
-        self.assertEqual(pixel(surf, lay.counter_x[1] + 5, G.DIGIT_Y + 1), theme.WIN95["led_off"])
-        self.assertEqual(pixel(surf, lay.counter_x[1] + 11, G.DIGIT_Y + 5), theme.WIN95["led_on"])
+        self.assertEqual(pixel(surf, lay.counter_x[1] + 5, G.DIGIT_Y + 1), colours.WIN95["led_off"])
+        self.assertEqual(pixel(surf, lay.counter_x[1] + 11, G.DIGIT_Y + 5), colours.WIN95["led_on"])
 
 
 class LostBoardSmoke(unittest.TestCase):
     def test_under_every_colour_set(self):
         g = lost_expert()
-        for name, colours in (("win95", theme.WIN95), ("mono", theme.MONO), ("nord", NORD)):
+        for name, palette in (("win95", colours.WIN95), ("mono", colours.MONO)):
             with self.subTest(name):
-                surf = paint(g, colours)
+                surf = paint(g, palette)
                 ex, ey = cell_origin(0, 15)
-                self.assertEqual(pixel(surf, ex + 1, ey + 1), colours["exploded"])
+                self.assertEqual(pixel(surf, ex + 1, ey + 1), palette["exploded"])
                 nx, ny = cell_origin(0, 14)              # a 1 next to the mine
                 gx, gy = first_ink(sprites.CELLS["open1"])
-                self.assertEqual(pixel(surf, nx + gx, ny + gy), colours["num1"])
+                self.assertEqual(pixel(surf, nx + gx, ny + gy), palette["num1"])
 
 
 class Interaction(unittest.TestCase):
     def test_pressed_covered_cell_draws_sunken_open(self):
         g = Game.new("beginner")
-        surf = paint(g, theme.WIN95, pressed={(0, 0)})
+        surf = paint(g, colours.WIN95, pressed={(0, 0)})
         x, y = cell_origin(0, 0)
-        self.assertEqual(pixel(surf, x, y), theme.WIN95["grid"])
-        self.assertEqual(pixel(surf, x + 8, y + 8), theme.WIN95["revealed"])
+        self.assertEqual(pixel(surf, x, y), colours.WIN95["grid"])
+        self.assertEqual(pixel(surf, x + 8, y + 8), colours.WIN95["revealed"])
 
     def test_cursor_outline(self):
-        surf = paint(Game.new("beginner"), NORD, cursor=(4, 4))
+        surf = paint(Game.new("beginner"), colours.WIN95, cursor=(4, 4))
         x, y = cell_origin(4, 4)
-        self.assertEqual(pixel(surf, x, y), NORD["cursor"])
-        self.assertEqual(pixel(surf, x + 15, y + 15), NORD["cursor"])
+        self.assertEqual(pixel(surf, x, y), colours.WIN95["cursor"])
+        self.assertEqual(pixel(surf, x + 15, y + 15), colours.WIN95["cursor"])
 
-    def test_cache_follows_a_colour_change(self):
+    def test_cache_follows_the_color_toggle(self):
         cache = render.CellCache()
-        cache.prepare(theme.WIN95)
-        a = cache.get("covered")
-        cache.prepare(NORD)
-        b = cache.get("covered")
+        cache.prepare(colours.WIN95)
+        a = cache.get("open1")
+        cache.prepare(colours.MONO)
+        b = cache.get("open1")
         self.assertIsNot(a, b)
-        self.assertEqual(pixel(b, 8, 8), NORD["face"])
+        gx, gy = first_ink(sprites.CELLS["open1"])
+        self.assertEqual(pixel(a, gx, gy), colours.WIN95["num1"])
+        self.assertEqual(pixel(b, gx, gy), colours.MONO["num1"])
 
 
 if __name__ == "__main__":
