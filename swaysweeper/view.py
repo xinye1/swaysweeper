@@ -16,6 +16,8 @@ from .theme import rgb  # noqa: E402
 
 _DIRS = {"Left": (-1, 0), "h": (-1, 0), "Right": (1, 0), "l": (1, 0),
          "Up": (0, -1), "k": (0, -1), "Down": (0, 1), "j": (0, 1)}
+_MASKS = ((Gdk.ModifierType.BUTTON1_MASK, 1), (Gdk.ModifierType.BUTTON2_MASK, 2),
+          (Gdk.ModifierType.BUTTON3_MASK, 3))
 _INPUT = (Gdk.EventType.BUTTON_PRESS, Gdk.EventType.BUTTON_RELEASE,
           Gdk.EventType.MOTION_NOTIFY)
 
@@ -92,13 +94,15 @@ class BoardView(Gtk.DrawingArea):
                 self.queue_draw()
             return False
         button = event.get_button()
+        state = event.get_modifier_state()
+        held = frozenset(b for mask, b in _MASKS if state & mask)
         if kind == Gdk.EventType.BUTTON_PRESS:
             self.grab_focus()
-            shift = bool(event.get_modifier_state() & Gdk.ModifierType.SHIFT_MASK)
-            actions = self.gestures.press(button, cell, face, shift=shift,
-                                          active=not self.app.game.board.over)
+            actions = self.gestures.press(button, cell, face,
+                                          shift=bool(state & Gdk.ModifierType.SHIFT_MASK),
+                                          active=not self.app.game.board.over, held=held)
         else:
-            actions = self.gestures.release(button, cell, face)
+            actions = self.gestures.release(button, cell, face, held=held)
         for action in actions:
             self.app.act(action)
         self.queue_draw()

@@ -37,6 +37,13 @@ class StoreFiles(unittest.TestCase):
         self.assertFalse((self.root / "game.json").exists())
         self.assertEqual((self.root / "game.json.bad").read_text(), "{nope")
 
+    def test_non_utf8_file_is_quarantined_not_fatal(self):
+        # An editor saving best.json as Latin-1 must not stop the game starting.
+        self.root.mkdir(parents=True)
+        (self.root / "best.json").write_bytes(b'{"beginner": [5, "Jos\xe9"]}')
+        self.assertIsNone(self.s.load("best", lambda d: d))
+        self.assertTrue((self.root / "best.json.bad").exists())
+
     def test_invalid_content_is_quarantined(self):
         self.s.save("game", {"a": 1})
 

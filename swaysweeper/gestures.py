@@ -6,6 +6,10 @@
 - A reveal or chord fires on the FIRST button released, on the square under
   the pointer; released off the board, nothing happens.
 - The smiley is its own button: pressed while held under the pointer.
+
+Pass `held` (from the event's button mask) whenever you have it: a release
+can be delivered elsewhere — to a modal dialog opened mid-gesture — and a
+button remembered as down would turn every later left press into a chord.
 """
 
 from .board import LOST, WON
@@ -20,7 +24,9 @@ class Gestures:
         self.cell = None
         self.on_face = False
 
-    def press(self, button, cell, on_face, shift=False, active=True):
+    def press(self, button, cell, on_face, shift=False, active=True, held=None):
+        if held is not None:               # GTK's mask: buttons down before this press
+            self.held = set(held)
         self.held.add(button)
         self.cell, self.on_face = cell, on_face
         if self.mode == "face":
@@ -46,7 +52,9 @@ class Gestures:
     def motion(self, cell, on_face):
         self.cell, self.on_face = cell, on_face
 
-    def release(self, button, cell, on_face):
+    def release(self, button, cell, on_face, held=None):
+        if held is not None:               # GTK's mask: buttons down, this one included
+            self.held = set(held)
         self.held.discard(button)
         self.cell, self.on_face = cell, on_face
         mode = self.mode

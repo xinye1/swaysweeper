@@ -102,5 +102,22 @@ class GameOver(unittest.TestCase):
         self.assertEqual(g.release(LEFT, None, True), [("new",)])
 
 
+
+class StaleHeld(unittest.TestCase):
+    def test_a_release_lost_to_a_dialog_does_not_poison_the_next_game(self):
+        # A record win by chord opens the modal name prompt inside the left
+        # release; the right release then goes to the dialog, never to us.
+        g = Gestures()
+        g.press(LEFT, (4, 4), False)
+        g.press(RIGHT, (4, 4), False)
+        g.release(LEFT, (4, 4), False)
+        # Next game: GTK's button mask says nothing is held before this press.
+        self.assertEqual(g.press(LEFT, None, True, held=frozenset()), [])
+        self.assertEqual(g.face(PLAYING), "pressed")
+        self.assertEqual(g.release(LEFT, None, True, held=frozenset({LEFT})), [("new",)])
+        g.press(LEFT, (2, 2), False, held=frozenset())
+        self.assertEqual(g.release(LEFT, (2, 2), False, held=frozenset({LEFT})),
+                         [("reveal", 2, 2)])
+
 if __name__ == "__main__":
     unittest.main()

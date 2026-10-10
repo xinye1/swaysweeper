@@ -32,7 +32,7 @@ class Store:
             text = path.read_text()
         except FileNotFoundError:
             return None
-        except OSError:
+        except (OSError, UnicodeDecodeError):     # UnicodeDecodeError is a ValueError
             self._quarantine(path)
             return None
         try:
