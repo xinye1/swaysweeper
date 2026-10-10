@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=swaysweeper
+GenericName=Minesweeper
+Comment=The classic Windows Minesweeper, in your palette's colours
+Exec=@BINDIR@/swaysweeper
+Terminal=false
+Categories=Game;LogicGame;
+Keywords=minesweeper;mines;game;
+StartupNotify=false
