@@ -1,263 +1,513 @@
 # swaysweeper for Windows — design
 
-*2026-10-11. Status: draft, for adversarial review.*
+*2026-10-11. Status: revised after an adversarial review (17 findings folded in). Five taste
+questions are open (§10); the spec counts as approved once Xinye has answered them.*
 
 A native Win32 version of swaysweeper: the same game as the Linux one, in C against the Win32 API
 and GDI, shipped as one `.exe`. The Linux design
-(`docs/specs/2026-10-09-swaysweeper-design.md`, its colour/theme parts superseded) stays the
-authority on **rules, geometry and look**. This document covers what is different on Windows and
+(`docs/specs/2026-10-09-swaysweeper-design.md`, with its colour/theme parts superseded) stays the
+authority on **rules, geometry and look**. This document covers what's different on Windows and
 how the two implementations are kept identical.
+
+Sources: the reverse-engineered winmine at
+[repnz/ReversingMinesweeper](https://github.com/repnz/ReversingMinesweeper), cited as `file.c:line`
+under `Minesweeper/`, and Microsoft Learn for Win32.
 
 ## 0. Understanding
 
 **Stated by Xinye**
 
 - Make a Windows version and release it. The first release (`v0.1.0-beta.1`, Linux) is out.
-- **Native Win32 rewrite**, chosen over bundling GTK with the Python code. A small exe with real
+- **Native Win32 rewrite**, chosen over bundling GTK with the Python code: a small exe with real
   Windows menus and dialogs, at the cost of a second codebase.
 - Pre-release versioning: the Windows release is **`v0.1.0-beta.2`**.
-- Classic colours only, as on Linux: Windows 95 with Color on, monochrome with it off.
+- Classic colours only, as on Linux: Windows 95 with Color on, monochrome with Color off.
 
 **Assumed**
 
-- Windows 10 1703+ and 11, x86-64. No ARM64 build, no installer, no code signing, so SmartScreen
-  warns on first run and the README says so.
-- There's no Windows or Wine here, so the exe is compiled and exercised only on GitHub's Windows
-  runner, as termtris is. Everything that can be portable C is, so it compiles and is tested on
-  Linux with the system `gcc`.
+- Windows 10 1703+ and 11, x86-64.
+  - No ARM64 build, no installer, no code signing, so SmartScreen warns on first run, and the
+    README says so.
+  - "Dependency-free" means no DLLs beyond what Windows 10+ ships. The static UCRT64 build still
+    uses the system UCRT.
+- There's no Windows or Wine here, so the exe is built and exercised only on GitHub's Windows
+  runner, as termtris is.
+  - Everything that can be portable C is, so it builds and is tested on Linux with gcc.
+  - The runner is 96 DPI with one monitor, so **DPI scaling, multi-monitor and Zoom fitting aren't
+    verified by CI**. They wait for hands-on play.
 
 **Success criteria**
 
-- The same rules, pixels and keys as the Linux build, *proved* rather than eyeballed: the C core
-  replays scripted games and renders boards that a Python test compares, step by step and pixel by
-  pixel, against the Python implementation (§5).
-- A static, dependency-free `swaysweeper.exe` that launches, plays, saves and resumes on a real
-  Windows desktop, exercised by an automated smoke test on the runner (§6).
-- Release `v0.1.0-beta.2` carries `swaysweeper-windows-x86_64.exe` and its `.sha256`, built by a
-  workflow from the tagged source.
+- **Same rules, pixels, keys and session behaviour as Linux, proved rather than eyeballed.**
+  - Scripted sessions are replayed through the C core and the Python implementation, then compared
+    step by step and pixel by pixel (§5).
+  - This runs against both the gcc/Linux build and the MinGW/Windows build of the core.
+- **A static `swaysweeper.exe` that launches, plays, saves and resumes on a real Windows desktop**,
+  exercised by an automated smoke test on the runner (§6).
+- **Release `v0.1.0-beta.2` carries `swaysweeper-windows-x86_64.exe` and its `.sha256`**, built by
+  a workflow from the tagged source.
 
 ## 1. Behaviour
 
-Identical to Linux (Linux spec §1, §2 geometry, §5 resume semantics, §6 keyboard, §7 sounds),
+Identical to Linux (Linux spec §1; §2 geometry; §5 resume semantics; §6 keyboard; §7 sounds),
 except:
 
 | | Linux | Windows |
 |---|---|---|
-| Menu bar | GTK popover menu | Native Win32 menu (`.rc`), the same items, check marks and radio dots |
-| Dialogs | GTK windows | Native dialog templates: Custom Field, Congratulations (name entry), Fastest Mine Sweepers (with Reset Scores), Keys, About |
-| Minimise | n/a (sway has none) | **Pauses the timer**, as winmine did on minimise; it resumes on restore |
+| Menu bar | GTK popover menu | Native Win32 menu (`.rc`): the same items, check marks and radio dots |
+| Dialogs | GTK windows, non-blocking | Native modal dialog templates (§3.6) |
+| Minimise | n/a (sway has none) | **Pauses the timer and stops any sound**, as winmine does (§3.4) |
+| Window position | sway places it | **Remembered** in `settings.ini` and kept on-screen (§3.3) |
 | Scale | GTK logical pixels | Per-monitor DPI aware (§3.3) |
 | State | `$XDG_STATE_HOME/swaysweeper/*.json` | `%LOCALAPPDATA%\swaysweeper\*.ini` (§3.5) |
-| Sound | `pw-play`, WAV files cached | `PlaySoundW` from WAV bytes in memory; no files |
-| Second launch | GApplication presents the window | A named mutex; the second process brings the first window forward and exits |
+| Sound | `pw-play`, WAV files cached | `PlaySoundW` from static in-memory WAV bytes |
+| Second launch | GApplication presents the window | A named mutex: the second process brings the first window forward and exits (§3.8) |
 
-The window title is `swaysweeper`. The window has a caption, system menu and minimise box, but no
-maximise box and no sizing border, like winmine. Its client area is exactly the game area × scale.
+The window:
+
+- Title: `swaysweeper`.
+- Styles: `WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX`, which is caption, system
+  menu, minimise box, no maximise and no sizing border, as in winmine (windowing.c:835).
+- Class style 0, so double-clicks arrive as two presses (windowing.c:812).
+- Client area: exactly the game area × scale.
+
+Winmine does **not** pause on deactivation or while a menu is open (windowing.c:489-493, 524), so
+neither does this.
 
 ## 2. Architecture
 
-Everything lives under `win/` in this repo. The C is C11.
+### 2.1 Python first: a GTK-free session layer
+
+The Linux version keeps session logic inside GTK modules. That logic is exactly what `main.c` will
+reimplement, so it moves into **`swaysweeper/session.py`** (no GTK), unchanged in behaviour, with
+tests written first. It takes:
+
+- the key → action map and cursor rules (view.py:107-133);
+- motion hiding the cursor (view.py:91-93);
+- the hit-testing of pointer events through `geometry.cell_at` / `on_face`;
+- new game resetting the cursor and gesture mode (app.py:269-276);
+- `app.act`'s consequences (app.py:206-302): status transitions, which sound plays (tick on
+  READY→PLAYING, win, lose), best-time eligibility (`seconds < best`, standard levels only), and
+  save-vs-delete of the game file;
+- the face, pressed cells and cursor that a paint derives (view.py `_draw`).
+
+Its interface is **events in, effects out**:
+
+```
+Session(settings, best, game)
+  .press(button, px, py, shift, held)   .release(button, px, py, held)   .motion(px, py)
+  .key(name)   .tick()   .new(game)
+  -> [effects]: ("sound", name) ("best", level, seconds) ("save",) ("delete",)
+                ("new_game",) ("show_keys",) ("unhandled",) ("redraw",)
+  .paint_state() -> (face, pressed cells, cursor)
+```
+
+- Pointer coordinates are game-area pixels at ×1, so hit-testing is covered too. Off-board is
+  just a coordinate outside the board.
+- `("new_game",)` asks the host for a fresh random board. The host (or a parity script) supplies
+  it with `.new(game)`.
+- `app.py` and `view.py` become thin hosts over `Session`. The full existing suite must stay green.
+
+**Key vocabulary** (canonical names, shared by both builds): `Left Right Up Down h j k l space
+Return f c question`.
+
+### 2.2 The C side
+
+Everything lives under `win/`, in C11.
 
 | File | Contents | Depends on |
 |---|---|---|
-| `win/core.h`, `win/core.c` | Board, game, gestures, geometry, renderer into a 32-bit pixel buffer, sound synthesis (WAV bytes), state (de)serialisation, xorshift RNG. **No `windows.h`.** | C library |
+| `win/core.h`, `win/core.c` | Board, game, gestures, geometry, **session** (§2.1), renderer into a 32-bit pixel buffer, WAV synthesis, state (de)serialisation, RNG. **No `windows.h`.** | C library, `-lm` |
 | `win/sprites.h` | Generated sprite and colour tables. | — |
-| `win/main.c` | Window, menu, message loop, input → gestures, timer, blit, dialogs, sound playback, files, DPI, single instance. | `core`, Win32 |
-| `win/swaysweeper.rc` | Menu, accelerators, dialog templates, version info, icon, manifest. | — |
+| `win/main.c` | Window, menu, message loop, input to `session`, timer, blit, dialogs, sound playback, files, DPI, single instance. | `core`, Win32 |
+| `win/swaysweeper.rc` | Menu, accelerators, dialog templates, `VERSIONINFO`, icon, manifest. `#include "core.h"` for the version. | — |
 | `win/swaysweeper.manifest` | Common Controls v6, PerMonitorV2 DPI awareness, `asInvoker`. | — |
-| `win/swaysweeper.ico` | Generated from the smiley sprite at 16, 32 and 48 px. | — |
-| `win/replay.c` | Test driver: reads a script on stdin, drives `core`, prints state or a PPM. | `core` |
-| `win/test_core.c` | C unit tests for what the replay doesn't cover (serialisation, clamping, WAV header). | `core` |
+| `win/swaysweeper.ico` | Generated (§2.3). | — |
+| `win/replay.c` | Test driver: reads a script on stdin, drives `core`, prints effects, state and PPMs. | `core` |
+| `win/test_core.c` | C unit tests for what replay doesn't cover. | `core` |
 | `win/wintest.c` | Windows-only smoke test that drives the real exe (§6). | Win32 |
 | `win/Makefile` | `make -C win` builds the exe; `make -C win test` builds and runs the portable tests with any `cc`. | — |
-| `tools/gen_c_sprites.py` | Writes `win/sprites.h` and `win/swaysweeper.ico` from `swaysweeper/sprites.py` and `colours.py`. | Python |
+| `tools/gen_c_sprites.py` | Writes `win/sprites.h` and `win/swaysweeper.ico` from `sprites.py` and `colours.py`. | Python |
 
-**Single source of the art.** The sprites and both colour sets are defined once, in the Python
-package; `win/sprites.h` is generated from them and committed. A Python test regenerates it in
-memory and fails if the committed file differs, so the two builds can never drift in look.
+### 2.3 Single sources
 
-**One Linux-side refactor.** The key → action mapping lives in `view.py` (GTK), so the parity
-test can't drive it. It moves, unchanged in behaviour, to a GTK-free `swaysweeper/keys.py`
-(`key(name, cursor, board) → (cursor, action)`), which `view.py` calls. Its existing behaviour gets
-tests first.
+**Art.** The sprites and both colour sets are defined once, in the Python package.
+`win/sprites.h` and `win/swaysweeper.ico` are generated from them and committed, and a Python test
+regenerates both in memory and fails if either differs. The icon images are:
 
-**Single source of the version.** `win/core.h` defines `SWAYSWEEPER_VERSION`. A Python test asserts
-it equals `swaysweeper.__version__`. The release workflow checks both against the tag.
+- **16 px:** the 17 px face cropped to its centre 16.
+- **20, 24 px:** the face on a transparent canvas.
+- **32, 48 px:** the 16 and 24 px images doubled by nearest-neighbour.
+
+**Version.**
+
+- `win/core.h` defines `SWAYSWEEPER_VERSION` ("0.1.0-beta.2") and the numeric
+  `SWAYSWEEPER_VERSION_NUM` (`0,1,0,2`) for `VERSIONINFO`.
+- A Python test asserts that the string equals `swaysweeper.__version__`.
+- The release workflow checks both against the tag.
 
 ## 3. Windows specifics
 
 ### 3.1 Rendering
 
-`core` renders the whole game area at ×1 into a `uint32_t` buffer (`0x00RRGGBB`), the same way
-`render.py` does: fill, bevels, LEDs, face, cells, pressed preview, keyboard cursor. `main.c` keeps
-a DIB of that size and draws it with `StretchDIBits` at an integer scale, `COLORONCOLOR`, so it
-stays crisp. The whole game area is re-rendered on every `WM_PAINT`. At ≤ 504 × 323 pixels that's
-cheap, so there's no cell cache.
+`core` renders the game area at ×1 into a `uint32_t` buffer (`0x00RRGGBB`), the same way
+`render.py` does.
+
+- **Buffer:** allocated **once** at the largest game area (Custom 30×24: 504 × 451), so a
+  difficulty change can't fail an allocation mid-game.
+- **Blit:** `main.c` draws it with `StretchDIBits` at the integer scale.
+- **Paint:** `WM_PAINT` and **`WM_PRINTCLIENT`** both perform the blit, so `PrintWindow` captures
+  work.
+- **No cell cache:** the area is small enough to re-render on every paint.
 
 ### 3.2 Input
 
-- **Mouse:** `WM_{L,M,R}BUTTON{DOWN,UP}` and `WM_MOUSEMOVE` are mapped to `core` gestures. The
-  message's `MK_*` flags supply the held-button set, the same way the GTK mask does on Linux.
-  `SetCapture` on the first press and `ReleaseCapture` when no button is held. `WM_CAPTURECHANGED`
-  (e.g. a dialog opening mid-gesture) resets the gesture state. Shift comes from `MK_SHIFT`.
-  Double-click messages aren't requested (no `CS_DBLCLKS`), so a fast second click is a press.
-- **Keyboard:** arrows via `WM_KEYDOWN`; `h j k l`, `f`, `c`, `?`, Space and Enter via `WM_CHAR`.
-  `F2` (New) and Ctrl+Q (Exit) are accelerators. `Alt` opens the menu as usual.
-- Mouse motion over the board hides the keyboard cursor, as on Linux.
+**Mouse**
 
-### 3.3 Scale and Zoom
+- `WM_{L,M,R}BUTTON{DOWN,UP}` and `WM_MOUSEMOVE` go to `session`, with coordinates from
+  `GET_X_LPARAM`/`GET_Y_LPARAM` (never `LOWORD`; captured coordinates go negative) divided by the
+  scale. XBUTTON messages are ignored.
+- The held set comes from the message's `MK_*` flags.
+  - Win32 down messages include the pressed button and up messages exclude it, the reverse of
+    GTK's mask.
+  - `Gestures.press`/`release` add and discard the button themselves (gestures.py:28-31, 54-57),
+    so both conventions give the same result.
+- **Release order:** `session.release`, then apply its effects, then `ReleaseCapture`.
+  - `SetCapture` is taken on the first press.
+  - `ReleaseCapture` itself sends `WM_CAPTURECHANGED`, so that message is ignored while a
+    self-release flag is set.
+  - Any other `WM_CAPTURECHANGED` resets the gesture state.
+- **Activation click:** see taste question 1 (§10).
+- **Spurious motion:** a `WM_MOUSEMOVE` at an unchanged position is ignored. Windows synthesises
+  these after dialogs close and on resize, and they'd wrongly hide the keyboard cursor.
 
-The process is PerMonitorV2 DPI-aware, so Windows never bitmap-stretches the window.
+**Keyboard**
 
-- **Base scale:** `max(1, round(dpi / 96))`.
-- **Effective scale:** `base × (Zoom ×2 ? 2 : 1)`.
-- **Fitting:** Zoom ×2 is enabled only while the window at `base × 2`, including its non-client
-  frame (`AdjustWindowRectExForDpi`), fits the monitor's work area. Otherwise it is greyed out, and
-  switched off if it was on. The ×1 window also gets the "fits" check: if even `base` doesn't fit
-  (Expert on a small screen at 200 %), the scale steps down to the largest integer that fits,
-  minimum 1.
-- **Changes:** `WM_DPICHANGED` recomputes all of this and resizes.
+- Arrows come from `WM_KEYDOWN`.
+- `h j k l f c ?` and Space come from `WM_CHAR`.
+- Enter comes from `WM_CHAR '\r'` only, which also covers numpad Enter.
+- Both handlers ignore the key while `GetKeyState(VK_CONTROL) < 0`, matching Linux's
+  Ctrl/Alt filter. Otherwise Ctrl+M (`'\r'`) would open a cell.
+- Alt combinations (`WM_SYSCHAR`/`WM_SYSKEYDOWN`) go to `DefWindowProc`.
+- `F2` (New) and Ctrl+Q (Exit) are accelerators, translated before `TranslateMessage`.
 
-### 3.4 Timer and pause
+**Modal dialogs are never opened from inside an input handler.**
 
-`SetTimer` at 1000 ms while the game is ticking, as on Linux.
+- A win that sets a best time saves the time first, then `PostMessage(WM_APP_WON)`.
+- That handler opens Congratulations, after the gesture has finished and capture is released.
+- After naming, the Fastest Mine Sweepers dialog is shown, as on Linux (app.py:257-260) and in
+  winmine (game.c:324-325).
+- The `?` key's Keys dialog is posted the same way.
 
-- **Minimise:** `SC_MINIMIZE` pauses, killing the timer and keeping the seconds. The board is
-  drawn as normal underneath, since nothing is visible anyway.
-- **Restore:** `SC_RESTORE` resumes, if the game was ticking before.
-- **Resume after relaunch:** a game resumed from disk starts paused until the first board input,
-  exactly as on Linux.
+### 3.3 Scale, Zoom and position
+
+The process is PerMonitorV2 DPI-aware (manifest), so Windows never bitmap-stretches it.
+
+**Scale**
+
+- `base = max(1, (dpi + 48) / 96)` in integer arithmetic (rounding; see taste question 2, §10).
+- `want = base × (zoom ? 2 : 1)`.
+- `scale` = the largest integer ≤ `want` whose window fits the monitor's work area, minimum 1.
+
+**Fitting** measures the outer window, from `AdjustWindowRectExForDpi` plus
+`GetSystemMetricsForDpi`.
+
+- Zoom ×2 is enabled only while `base × 2` fits.
+- When it stops fitting, the item greys out and the game shows at `base`. What happens to the
+  saved preference is taste question 3, §10.
+
+**`WM_GETDPISCALEDSIZE`** returns the exact size for the new DPI.
+
+- `WM_DPICHANGED` then uses only the suggested rectangle's top-left, so a drag across monitors
+  can't oscillate.
+
+**Menu wrap guard**
+
+- `AdjustWindowRectEx*` assumes a one-row menu.
+- After each `SetWindowPos`, `GetClientRect` is checked and the height corrected once if the menu
+  wrapped (cf. windowing.c:383-394).
+
+**Position**
+
+- Kept from `WM_WINDOWPOSCHANGED` (windowing.c:591-596), persisted as `x`/`y` in `settings.ini`.
+- On a resize, the top-left stays put. On a resize or a load, the window is then clamped into the
+  work area of `MonitorFromRect(…, MONITOR_DEFAULTTONEAREST)`, so a saved position on a monitor
+  that's gone comes back on-screen (cf. windowing.c:400-428).
+
+### 3.4 Timer and minimise
+
+- `SetTimer` runs at 1000 ms while `game.ticking && !minimised`.
+- **`minimised`** is a `main.c` flag driven by **`WM_SIZE`**:
+  - `SIZE_MINIMIZED` sets it, kills the timer and stops sound (`PlaySoundW(NULL, …)`, as winmine's
+    `FreeSound`, game.c:467).
+  - `SIZE_RESTORED`, after being minimised, clears it.
+- Not `WM_SYSCOMMAND`: a restore through `ShowWindow`, which the second-launch path uses, sends no
+  `SC_RESTORE`.
+- It's separate from `game.paused`:
+  - restore doesn't clear a resume-from-disk pause, and input doesn't clear a minimise;
+  - a game resumed from disk still starts paused until the first board input, exactly as on Linux.
 
 ### 3.5 State
 
-`%LOCALAPPDATA%\swaysweeper\` holds `settings.ini`, `best.ini` and `game.ini`: UTF-8 `key=value`
-lines, written by `core` and parsed by `core`.
+`%LOCALAPPDATA%\swaysweeper\` holds `settings.ini`, `best.ini` and `game.ini`.
 
-- **Location:** `LOCALAPPDATA` is read from the environment, falling back to
+**Format**
+
+- UTF-8 `key=value` lines.
+- Split on the first `=`.
+- A UTF-8 BOM and CRLF line ends are tolerated.
+- Values are never escaped. Names can't contain a newline because the edit control is single-line.
+- Written and parsed by `core`.
+
+**Location**
+
+- `LOCALAPPDATA` is read from the environment, falling back to
   `SHGetKnownFolderPath(FOLDERID_LocalAppData)`, so tests can redirect it.
-- **Atomic writes:** a temp file in the same directory, `FlushFileBuffers`, then
-  `MoveFileExW(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)`.
-- **Bad files:** an unreadable or invalid file is renamed `<name>.ini.bad`, and the defaults are
-  used. The game always starts.
-- **Validation:** loading validates exactly what `store.py` and `Game.from_dict` validate: known
-  keys, ranges, board size against difficulty, mines in bounds, marks rows, state, and exploded ⊆
-  mines.
-- **Names:** best-time names are at most 32 characters (code points), converted UTF-16 ⇄ UTF-8 at
-  the dialog boundary.
+- The mutex (§3.8) is taken **before** any state is loaded.
+
+**Atomic writes**: a temp file in the same directory, `FlushFileBuffers`, then
+`MoveFileExW(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)`.
+
+**Bad files**: an unreadable or invalid file is renamed `<name>.ini.bad` and defaults are used. The
+game always starts.
+
+**Validation**: the same rules `store.py` and `Game.from_dict` apply, worded as the code behaves.
+
+- Unknown settings keys are ignored.
+- Custom values are clamped (`clamp_custom`).
+- Booleans are `0`/`1`. Zoom is `1`/`2`. Difficulty is a known level or `custom`.
+- Best times are integers from 1 to 999. Names are truncated to 32 code points.
+- Game: version 1; a known difficulty whose dimensions match (standard) or are already in range
+  (custom); mines in bounds and unique; marks rows of the right size from `.F?#`; a known state;
+  exploded ⊆ mines; seconds from 0 to 999.
+- A position (`x`, `y`) is any integer pair; it's clamped on use (§3.3).
+- The malformed-input list for tests is INI-specific: missing `=`, a non-integer, out of range, a
+  wrong row length, an unknown mark char, an unknown state, exploded off a mine, and a wrong
+  version.
+
+**Names**: a typed name is stripped of surrounding whitespace, and an empty one becomes
+`Anonymous` (dialogs.py:89). It's converted UTF-16 ⇄ UTF-8 at the dialog boundary.
+`EM_SETLIMITTEXT(32)` counts UTF-16 units, which means ≤ 32 code points.
 
 The file format is Windows-only; the two builds never share state.
 
 ### 3.6 Dialogs
 
-All dialogs are modal and use the dialog font (`MS Shell Dlg 2`).
+Modal templates in `.rc`. The font is taste question 5, §10.
 
-- **Custom Field:** Height, Width and Mines edit boxes (numbers only), OK and Cancel. Values are
-  clamped by `clamp_custom`, never rejected.
-- **Congratulations:** "You have the fastest time for <level> level. Please type your name:". The
-  edit box is prefilled `Anonymous`, all selected, 32-character limit. Closing it any way records
-  the typed name, or `Anonymous` if empty, as on Linux. The time is saved *before* the dialog
-  opens.
+- **Custom Field:** Height, Width and Mines edit boxes, OK and Cancel. Values are read with
+  `GetDlgItemInt`; a failure (e.g. pasted non-digits, which `ES_NUMBER` doesn't block) counts as
+  0. All three are then clamped by `clamp_custom`, never rejected (winmine's `GetDlgIntOfRange`,
+  windowing.c:219-223).
+- **Congratulations:** "You have the fastest time for <level> level. Please type your name:".
+  - The edit box is prefilled `Anonymous`, all selected, 32-character limit.
+  - Closing it any way records the typed name, as on Linux.
+  - Opened via `WM_APP_WON` (§3.2); then Fastest Mine Sweepers is shown.
 - **Fastest Mine Sweepers:** three rows of seconds and name, with Reset Scores and OK.
 - **Keys:** the same text as Linux's Keys dialog.
-- **About:** name, version, "The classic Windows Minesweeper.", the omasweeper credit and MIT.
+- **About:** the name, the version, "The classic Windows Minesweeper.", the omasweeper credit, and
+  MIT.
 
 ### 3.7 Sound
 
-`core` synthesises the three WAVs (tick, win, lose) byte-for-byte as `sound.write_wav` does. A
-test compares the bytes against the Python output. `main.c` plays them with `PlaySoundW(...,
-SND_MEMORY | SND_ASYNC | SND_NODEFAULT)`. Sound is off by default; a failed play is silent.
+`core` synthesises the three WAVs (tick, win, lose) **byte-for-byte as `sound.write_wav` does**:
+
+- `period = 22050.0 / hz`;
+- a sample is high iff `fmod(i, period) < period / 2`;
+- `(int)(22050 * seconds)` samples per note;
+- the same double literals, and the standard 44-byte RIFF header that Python's `wave` writes;
+- no `-ffast-math`.
+
+The reviewer verified that an `fmod` build matches Python sample for sample.
+
+- **Buffers:** static, built once at startup, alive for the process lifetime. `PlaySoundW(...,
+  SND_MEMORY | SND_ASYNC | SND_NODEFAULT)` needs them to outlive playback.
+- **Default:** sound is off by default.
+- **Failure:** a failed play is silent.
 
 ### 3.8 Single instance
 
-`CreateMutexW(L"Local\\io.github.xinye1.swaysweeper")`. If it already exists, the second process
-finds the first window by class name, restores it if minimised, calls `SetForegroundWindow`, and
-exits. Two processes never race on the state files.
+`CreateMutexW(L"Local\\io.github.xinye1.swaysweeper")` is taken first, before any state is loaded.
+
+If the mutex already exists, the second process:
+
+1. retries `FindWindowW` by class for up to 2 s, in case the first has no window yet;
+2. calls `ShowWindowAsync(SW_RESTORE)` if the window is minimised;
+3. calls `SetForegroundWindow`, which is allowed because the shell was foreground when it launched
+   us;
+4. exits.
 
 ### 3.9 RNG
 
-A xorshift64* generator seeded from `QueryPerformanceCounter` ^ the process id. Mines are placed by
-a partial Fisher–Yates shuffle over the W×H cells. The C and Python builds needn't share
-sequences: the parity tests feed explicit mine lists.
+- **Generator:** xorshift64*.
+- **Seed:** `QueryPerformanceCounter` ^ process id, mixed through splitmix64 and forced nonzero.
+- **Placement:** mines by partial Fisher–Yates over the W×H cells.
+- The builds needn't share sequences: parity scripts supply explicit mines.
 
 ## 4. Build
 
-- **Toolchain:** MinGW-w64 GCC. That's MSYS2 UCRT64 on the runner, or `x86_64-w64-mingw32-gcc` if
-  installed locally (it isn't, today).
-- **Flags:** `-std=c11 -O2 -Wall -Wextra -pedantic -Werror -municode -mwindows`, plus `-static -s`
-  for the release build.
-- **Linking:** links `user32 gdi32 winmm comctl32 shell32 ole32 uuid` only.
-- **Size:** the exe is expected to be well under 1 MB.
-- **Portable targets:** `make -C win test` builds `replay` and `test_core` with plain `cc` and the
-  same warning flags, so they run here and on both runners.
+**Toolchain**
+
+- MinGW-w64 GCC: MSYS2 UCRT64 on the runner, or `x86_64-w64-mingw32-gcc` if installed locally
+  (it isn't, today).
+
+**Exe build**
+
+- Flags: `-std=c11 -O2 -Wall -Wextra -pedantic -Werror -municode -mwindows`.
+- Release adds `-static -s`.
+- Links `winmm comctl32 shell32 ole32 uuid`; `-mwindows` brings `user32` and `gdi32`.
+- Expected well under 1 MB.
+
+**Portable build**
+
+- `make -C win test` builds `replay` and `test_core` with plain `cc`, the same warning flags and
+  `-lm`, and runs them.
+- On Windows, `replay` sets stdout to binary mode (`_setmode(_fileno(stdout), _O_BINARY)`), so PPMs
+  aren't corrupted, and it accepts CRLF scripts.
 
 ## 5. Parity testing (the core of the confidence)
 
-`tests/test_win_parity.py`, run by `make test`, compiles `win/replay` with the system `cc` (the
-test is skipped if there is none). It then runs one set of scripts through both implementations
-and compares the results.
+`tests/test_win_parity.py`, run by `make test`, compiles `win/replay` with the system `cc`. If
+there's no `cc`, it's skipped. It runs one set of scripts through the C replay and through
+`swaysweeper.session`, and compares their output.
 
-- **Script language:** one command per line.
-  - `new <w> <h> <difficulty> <x,y;x,y;…>` — explicit mines.
-  - `reveal x y` · `chord x y` · `mark x y <marks:0|1>` · `tick`.
-  - `press <button> <cx> <cy> <face:0|1> <shift:0|1> <held>` · `release …` · `motion …` — gestures.
-  - `key <name>` — keyboard actions.
-  - `dump` — state.
-  - `render <face> <pressed-cells> <cursor>` — a PPM of the game area.
-- **Compared outputs:**
-  - **State:** marks rows, board state, exploded set, revealed count, counter, seconds,
-    timer_running and paused, gesture mode and face, keyboard cursor, plus each action list a
-    gesture returns.
-  - **Pixels:** every `render` is a PPM compared byte-for-byte with the Python renderer's
-    (`render.draw` to a Cairo `RGB24` surface, converted to PPM).
-  - **Serialisation:** a round trip of the C state format, plus validation rejects for the same
-    malformed inputs as `test_store.py` and `test_game.py`.
-  - **WAV:** the bytes of each synthesised sound.
-- **Scripts:** the existing Python test boards (walled, relocation, chord-with-wrong-flags,
-  one-click win, −99 clamp, Custom clamps), plus a seeded random walk. That walk is a few hundred
-  games with random moves and gestures, generated in Python, replayed by both, and compared after
-  every step.
+**Script commands**, one per line:
+
+- `new <w> <h> <difficulty> <x,y;…>` — explicit mines. It also answers a pending `new_game`
+  effect.
+- `press <button> <px> <py> <shift> <held>`, `release <button> <px> <py> <held>`, `motion <px> <py>`
+  — game-area pixels; `held` is a set like `1,3` or `-`.
+- `key <name>` — from the vocabulary in §2.1.
+- `tick`.
+- `settings marks=<0|1> color=<0|1> sound=<0|1>`.
+- `dump` — state.
+- `render` — a PPM of the game area, taking face, pressed cells and cursor from the session.
+
+**Compared**
+
+- **Effects:** every effect list.
+- **State:** each `dump` — marks rows, board state, exploded set, revealed count, counter, seconds,
+  timer_running, paused, gesture mode, face, cursor.
+- **Pixels:** each `render`, as a PPM compared byte-for-byte with the Python renderer's.
+  - The Python side is `render.draw` to a Cairo `RGB24` surface, converted to PPM with the top
+    byte masked.
+  - Both colour sets are compared, via `settings color=`.
+- **Serialisation:** a C round trip, plus validation rejects for the §3.5 list (in `test_core.c`).
+- **WAV:** the bytes of each sound, from `replay`'s `wav <name>` command.
+
+**Scripts**
+
+- The existing Python test boards: walled, relocation, chord with wrong flags, one-click win, the
+  −99 clamp, Custom clamps.
+- A seeded random walk: a few hundred sessions of random gestures, keys, ticks and settings
+  changes, generated in Python, replayed by both builds, and compared after every step.
+
+**Both compilers**
+
+- The Linux CI job runs the parity test with gcc.
+- The Windows job runs it too, with `actions/setup-python`, `pip install pycairo` (it has Windows
+  wheels) and MSYS2's gcc as `cc`.
+- So the shipped compiler's `core` (UCRT `fmod` and `printf`) is checked, not just gcc's.
 
 ## 6. Windows smoke test (CI)
 
-`win/wintest.c` runs on the Windows runner against the built exe, with `LOCALAPPDATA` redirected to
-a temp directory. It:
+`win/wintest.c` runs on the Windows runner against the built exe, with `LOCALAPPDATA` redirected
+to a temp directory. Before the first launch, wintest writes a **known** `settings.ini` (Beginner)
+and `game.ini`: a fixed walled board, in progress, so every target cell is known and no click can
+win or cascade.
 
-1. Launches `swaysweeper.exe` and waits for its window (`FindWindowW` by class), then checks that
-   the client size is the Beginner game area × the base scale.
-2. Captures the client with `PrintWindow` and checks the smiley's yellow and a covered cell's
-   bevel.
-3. Posts `WM_LBUTTONDOWN`/`UP` on a cell, captures again, and checks the cell is now revealed
-   (sunken grid line) and the timer reads 001.
-4. Posts `WM_RBUTTONDOWN` on another covered cell and checks the flag's red.
-5. Sends `WM_CLOSE`, waits for exit, and checks `game.ini` exists. It relaunches and checks the
-   same cells are restored, closes again, and checks a second launch while one is running exits
-   within 5 s with the first still alive.
-6. Writes every capture as a BMP artifact for human inspection.
+1. Launches the exe and waits for its window by class. Checks the client size is the Beginner area
+   × 1 (the runner is 96 DPI).
+2. Captures with `PrintWindow` (served by `WM_PRINTCLIENT`) and checks:
+   - the smiley's yellow;
+   - a covered cell's bevel;
+   - the restored marks.
+3. Posts `WM_LBUTTONDOWN` and `WM_LBUTTONUP` back to back on a known safe cell, after
+   `SetCursorPos` to it.
+   - Checks the cell is revealed (grid line) and shows its expected number.
+   - Checks the timer has advanced from the saved seconds by 0 to 2. The resumed timer starts on
+     this input, and a tick may race the capture.
+4. Posts `WM_RBUTTONDOWN` and `WM_RBUTTONUP` on another known cell, and checks the flag's red.
+5. Sends `WM_CLOSE` and waits for exit.
+   - Checks `game.ini` holds the new marks.
+   - Relaunches and checks the same pixels come back.
+6. Single-instance check: launches a second instance and checks it exits within 5 s, with the
+   first still alive.
+7. Closes the app and writes every capture as a BMP artifact for human inspection.
+
+**First plan task: a spike** that creates a window on the runner, captures it and checks pixels.
+It settles whether the runner's desktop paints and captures at all before anything depends on it.
+If capture is impossible there, §6 falls back to message-level checks plus `game.ini` contents, and
+the spec is amended.
 
 ## 7. CI and release
 
 The repo has no CI today. It gets termtris's pattern.
 
-- **`ci.yml`:** gated to PR opened-as-ready / ready_for_review, plus `workflow_dispatch`, never on
-  every push. A **linux** job runs `make test`, which includes the parity tests with gcc. A
-  **windows** job (MSYS2 UCRT64) runs `make -C win test`, then `make -C win`, then
-  `wintest.exe swaysweeper.exe`, and uploads the captures.
-- **`release.yml`:** runs on `release: published`. It checks that the tag is `v` + `__version__`
-  and also `v` + `SWAYSWEEPER_VERSION`, builds the static stripped exe, and uploads
-  `swaysweeper-windows-x86_64.exe` with `.sha256` via `gh release upload`.
-- **The release:** bump both versions to `0.1.0-beta.2`, merge, then publish `v0.1.0-beta.2` as a
-  pre-release. The notes name the SmartScreen warning and the checksum.
+**`ci.yml`**
+
+- Gated: runs on a PR opened as ready or marked `ready_for_review`, and on `workflow_dispatch`.
+  Never on every push.
+- **linux** job:
+  - `apt install python3-gi python3-cairo gir1.2-gtk-4.0`, then `make test`, which includes the
+    parity tests.
+- **windows** job (MSYS2 UCRT64 plus setup-python):
+  - `make -C win test`;
+  - the parity test (§5);
+  - `make -C win`;
+  - `wintest.exe swaysweeper.exe`;
+  - upload the captures.
+
+**`release.yml`** runs on `release: published`:
+
+1. Checks the tag is `v` + `__version__` and `v` + `SWAYSWEEPER_VERSION`.
+2. Builds the static, stripped exe.
+3. Uploads `swaysweeper-windows-x86_64.exe` and its `.sha256` with `gh release upload`.
+
+**The release**
+
+- Bump both versions to `0.1.0-beta.2` and merge.
+- Publish `v0.1.0-beta.2` as a pre-release.
+- The notes name the SmartScreen warning and the checksum, and say that DPI, multi-monitor and feel
+  haven't been tried by hand yet.
 
 ## 8. Error handling
 
 - No path ends in a crash dialog.
-- A failed state write is ignored: the game goes on, as on Linux.
+- A failed state write is ignored, and the game goes on, as on Linux.
 - A failed `PlaySoundW` is silent.
 - A failed DIB allocation at startup shows a `MessageBoxW` and exits non-zero.
 - Every Win32 call whose failure matters is checked.
 
 ## 9. Out of scope
 
-- ARM64, 32-bit, installer, MSI or winget, and code signing.
+- ARM64, 32-bit, an installer, MSI or winget, and code signing.
 - Sharing state with the Linux build.
 - High-contrast themes and screen readers. The game area is a bitmap, as winmine's was.
+- Winmine's XYZZY cheat and its F4/F5/F6 keys (windowing.c:11, 707-765), unless taste question 4
+  says otherwise.
+
+## 10. Open taste questions (for Xinye)
+
+Each has a recommendation. Once answered, they're folded into §3 and this section goes.
+
+1. **Swallow the click that activates the window?** Winmine drops the first press after a
+   click-activation (windowing.c:495-538, 586-589).
+   - (a) Yes, faithful.
+   - (b) **No (recommended).** The first click plays, matching Linux; winmine's behaviour was a
+     known annoyance.
+   - (c) Swallow it only on the board.
+2. **Base scale at 125 % / 175 %.**
+   - (a) **Round (recommended).** 125 % gives ×1, 175 % gives ×2, and Zoom ×2 covers anyone who
+     finds ×1 small.
+   - (b) Ceiling, capped by fit. 125 % gives ×2.
+   - (c) Floor. Always crisp, often small.
+3. **When Zoom ×2 stops fitting** (e.g. a laptop undocked):
+   - (a) Turn it off and save that, as Linux does.
+   - (b) **Turn it off for this session but keep the saved preference (recommended).**
+4. **The XYZZY cheat:**
+   - (a) **Omit (recommended).**
+   - (b) Implement it, as winmine lore.
+5. **Dialog font:**
+   - (a) **`MS Shell Dlg 2` (Tahoma), period-faithful (recommended).**
+   - (b) Segoe UI 9 pt, native on Windows 10/11.
