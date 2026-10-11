@@ -669,6 +669,12 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_APP_KEYS: command(ID_KEYS); return 0;
     case WM_SIZE:                               /* spec §3.4: not WM_SYSCOMMAND */
+        if (wp == SIZE_MAXIMIZED) {
+            /* A fixed-size window, as winmine's: never maximised. A shortcut's
+             * "Run: Maximized" or a restore from it lands here; put it back. */
+            ShowWindowAsync(hwnd, SW_RESTORE);
+            return 0;
+        }
         if (wp == SIZE_MINIMIZED) {
             g_minimised = 1;
             PlaySoundW(NULL, NULL, 0);          /* winmine's FreeSound, game.c:467 */
@@ -797,7 +803,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show)
         return 1;
     HACCEL accel = LoadAcceleratorsW(inst, MAKEINTRESOURCEW(IDA_ACCEL));
     apply_size();                               /* scale, then clamp onto a monitor */
-    ShowWindow(g_wnd, show);
+    ShowWindow(g_wnd, show == SW_SHOWMAXIMIZED ? SW_SHOWNORMAL : show);
     sync_timer();
 
     MSG msg;
