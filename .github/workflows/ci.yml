@@ -6,8 +6,6 @@ on:
   pull_request:
     types: [opened, reopened, ready_for_review]
   workflow_dispatch:
-  push:
-    branches: [feat/windows]   # TEMPORARY, development only: removed before the PR is marked ready
 
 permissions:
   contents: read
