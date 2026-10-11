@@ -1,0 +1,38 @@
+name: Spike
+# Throwaway (plan Task 1): deleted once its answers are in the ledger.
+on:
+  push:
+    branches: [feat/windows]
+    paths: [spike/**, .github/workflows/spike.yml]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          path-type: inherit
+          install: mingw-w64-ucrt-x86_64-gcc make
+      - name: Python and compilers as the parity test will see them
+        run: |
+          which python; python --version
+          python -m pip install pycairo
+          python -c "import cairo, shutil; print('pycairo', cairo.version, 'cc', shutil.which('cc'), 'gcc', shutil.which('gcc'))"
+      - name: Desktop capture, click, minimise
+        run: |
+          cd spike
+          gcc -std=c11 -O2 -Wall -Wextra -pedantic -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0A00 -municode -mwindows -o app.exe app.c
+          gcc -std=c11 -O2 -Wall -Wextra -pedantic -Werror -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0A00 -o probe.exe probe.c -lgdi32
+          ./probe.exe
