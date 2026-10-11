@@ -188,6 +188,18 @@ static void cmd_render(const char *name)
     fclose(f);
 }
 
+static void cmd_wav(void)
+{
+    static unsigned char buf[WAV_MAX];
+    const char *name = arg();
+    SoundName which = strcmp(name, "win") == 0 ? SND_WIN : strcmp(name, "lose") == 0 ? SND_LOSE
+                                                                                    : SND_TICK;
+    size_t n = wav_build(which, buf, sizeof buf);
+    FILE *f = open_out(arg());
+    fwrite(buf, 1, n, f);
+    fclose(f);
+}
+
 int main(int argc, char **argv)
 {
 #ifdef _WIN32
@@ -240,6 +252,8 @@ int main(int argc, char **argv)
                 cmd_dump();
             else if (strcmp(cmd, "render") == 0)
                 cmd_render(arg());
+            else if (strcmp(cmd, "wav") == 0)
+                cmd_wav();
             else {
                 fprintf(stderr, "replay: unknown command %s\n", cmd);
                 return 1;

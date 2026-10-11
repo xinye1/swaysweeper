@@ -13,6 +13,7 @@ from swaysweeper import geometry as G
 from swaysweeper.board import Board
 from swaysweeper.game import Game
 from swaysweeper.session import Session
+from swaysweeper.sound import TONES, write_wav
 
 LEVELS = ("beginner", "intermediate", "expert")
 _MARK_CHAR = {"covered": ".", "flag": "F", "question": "?", "revealed": "#"}
@@ -79,6 +80,9 @@ class Replay:
             return self._dump()
         if cmd == "render":
             self._render(args[0])
+            return []
+        if cmd == "wav":
+            write_wav(self.outdir / args[1], TONES[args[0]])
             return []
         raise ValueError(f"unknown command {cmd!r}")
 

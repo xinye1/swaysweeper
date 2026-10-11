@@ -2,8 +2,10 @@
  * step, and tests/test_win_parity.py will say when they aren't. */
 #include "core.h"
 #include "sprites.h"
+#include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
-
+#include <stdlib.h>
 #include <string.h>
 
 static int clampi(int v, int lo, int hi)
@@ -766,4 +768,518 @@ void render_session(const Session *s, uint32_t *pixels, int stride)
         fill(&c, SLOT_CURSOR, x, y, 1, 16);
         fill(&c, SLOT_CURSOR, x + 15, y, 1, 16);
     }
+}
+
+/* --- sound.py --------------------------------------------------------------- */
+
+typedef struct { double hz, seconds; } Note;
+static const Note TICK_NOTES[] = {{1200, 0.02}};
+static const Note WIN_NOTES[] = {{523, 0.08}, {659, 0.08}, {784, 0.16}};
+static const Note LOSE_NOTES[] = {{196, 0.12}, {147, 0.25}};
+static const struct { const Note *notes; int n; } TONES[] = {
+    {TICK_NOTES, 1}, {WIN_NOTES, 3}, {LOSE_NOTES, 2},
+};
+enum { RATE = 22050 };
+
+static void put16(unsigned char *p, unsigned v)
+{
+    p[0] = (unsigned char)(v & 0xff);
+    p[1] = (unsigned char)((v >> 8) & 0xff);
+}
+
+static void put32(unsigned char *p, unsigned long v)
+{
+    put16(p, (unsigned)(v & 0xffff));
+    put16(p + 2, (unsigned)((v >> 16) & 0xffff));
+}
+
+/* write_wav's square wave with the same double arithmetic: a sample is high
+ * iff fmod(i, period) < period / 2. Then Python's wave module's 44-byte header. */
+size_t wav_build(SoundName name, unsigned char *out, size_t cap)
+{
+    const int amplitude = (int)(0.2 * 32767);
+    const Note *notes = TONES[name].notes;
+    size_t samples = 0;
+    for (int i = 0; i < TONES[name].n; i++)
+        samples += (size_t)(int)(RATE * notes[i].seconds);
+    size_t data = samples * 2, total = 44 + data;
+    if (total > cap)
+        return 0;
+    memcpy(out, "RIFF", 4);
+    put32(out + 4, (unsigned long)(36 + data));
+    memcpy(out + 8, "WAVEfmt ", 8);
+    put32(out + 16, 16);
+    put16(out + 20, 1);                 /* PCM */
+    put16(out + 22, 1);                 /* mono */
+    put32(out + 24, RATE);
+    put32(out + 28, RATE * 2);
+    put16(out + 32, 2);
+    put16(out + 34, 16);
+    memcpy(out + 36, "data", 4);
+    put32(out + 40, (unsigned long)data);
+    unsigned char *p = out + 44;
+    for (int k = 0; k < TONES[name].n; k++) {
+        double period = (double)RATE / notes[k].hz;
+        int count = (int)(RATE * notes[k].seconds);
+        for (int i = 0; i < count; i++, p += 2) {
+            int v = fmod((double)i, period) < period / 2 ? amplitude : -amplitude;
+            put16(p, (unsigned)v & 0xffff);
+        }
+    }
+    return total;
+}
+
+/* --- store.py's rules, in INI ------------------------------------------------ */
+
+typedef int (*IniLine)(char *key, char *value, void *ctx);
+
+/* Calls fn per `key=value` line: split on the first '=', a UTF-8 BOM and CRLF
+ * tolerated, blank lines skipped. -1 on a line with no '=' or a refused value. */
+static int ini_each(const char *text, IniLine fn, void *ctx)
+{
+    size_t len = strlen(text);
+    char *copy = malloc(len + 1);
+    if (!copy)
+        return -1;
+    memcpy(copy, text, len + 1);
+    char *p = copy;
+    if ((unsigned char)p[0] == 0xEF && (unsigned char)p[1] == 0xBB && (unsigned char)p[2] == 0xBF)
+        p += 3;
+    int rc = 0;
+    while (*p && rc == 0) {
+        char *end = strchr(p, '\n');
+        char *next = end ? end + 1 : p + strlen(p);
+        if (end)
+            *end = 0;
+        size_t n = strlen(p);
+        if (n && p[n - 1] == '\r')
+            p[n - 1] = 0;
+        if (*p) {
+            char *eq = strchr(p, '=');
+            if (!eq)
+                rc = -1;
+            else {
+                *eq = 0;
+                rc = fn(p, eq + 1, ctx);
+            }
+        }
+        p = next;
+    }
+    free(copy);
+    return rc;
+}
+
+/* A whole decimal integer, optionally negative; nothing else. */
+static int parse_int(const char *s, int *out)
+{
+    const char *p = s;
+    int neg = *p == '-';
+    p += neg;
+    if (!*p)
+        return 0;
+    long v = 0;
+    for (; *p; p++) {
+        if (*p < '0' || *p > '9')
+            return 0;
+        v = v * 10 + (*p - '0');
+        if (v > 1000000)
+            return 0;
+    }
+    *out = (int)(neg ? -v : v);
+    return 1;
+}
+
+static int parse_flag(const char *s, int *out)
+{
+    if (strcmp(s, "0") != 0 && strcmp(s, "1") != 0)
+        return -1;
+    *out = s[0] == '1';
+    return 0;
+}
+
+/* Exactly n comma-separated integers. */
+static int parse_ints(char *s, int *out, int n)
+{
+    for (int i = 0; i < n; i++) {
+        char *comma = strchr(s, ',');
+        if ((comma != NULL) != (i < n - 1))
+            return 0;
+        if (comma)
+            *comma = 0;
+        if (!parse_int(s, &out[i]))
+            return 0;
+        s = comma ? comma + 1 : s;
+    }
+    return 1;
+}
+
+typedef struct { char *buf; size_t cap, len; int ok; } Out;
+
+static void outf(Out *o, const char *fmt, ...);
+
+void settings_default(Settings *s)
+{
+    memset(s, 0, sizeof *s);
+    s->level = BEGINNER;
+    s->custom[0] = 9;
+    s->custom[1] = 9;
+    s->custom[2] = 10;
+    s->marks = s->color = 1;
+    s->zoom = 1;
+}
+
+typedef struct { Settings s; int seen_x, seen_y; } SettingsIni;
+
+static int settings_line(char *key, char *value, void *ctx)
+{
+    SettingsIni *si = ctx;
+    Settings *s = &si->s;
+    int v[3];
+    if (strcmp(key, "difficulty") == 0)
+        return level_from_name(value, &s->level) ? 0 : -1;
+    if (strcmp(key, "custom") == 0) {
+        if (!parse_ints(value, v, 3))
+            return -1;
+        clamp_custom(v[0], v[1], v[2], s->custom);
+        return 0;
+    }
+    if (strcmp(key, "marks") == 0)
+        return parse_flag(value, &s->marks);
+    if (strcmp(key, "color") == 0)
+        return parse_flag(value, &s->color);
+    if (strcmp(key, "sound") == 0)
+        return parse_flag(value, &s->sound);
+    if (strcmp(key, "zoom") == 0) {
+        if (!parse_int(value, &v[0]) || (v[0] != 1 && v[0] != 2))
+            return -1;
+        s->zoom = v[0];
+        return 0;
+    }
+    if (strcmp(key, "x") == 0 || strcmp(key, "y") == 0) {
+        if (!parse_int(value, &v[0]))
+            return -1;
+        if (key[0] == 'x') {
+            s->x = v[0];
+            si->seen_x = 1;
+        } else {
+            s->y = v[0];
+            si->seen_y = 1;
+        }
+        return 0;
+    }
+    return 0;                                   /* unknown keys are ignored */
+}
+
+int settings_parse(const char *text, Settings *out)
+{
+    SettingsIni si;
+    memset(&si, 0, sizeof si);
+    settings_default(&si.s);
+    if (ini_each(text, settings_line, &si) != 0)
+        return -1;
+    si.s.has_pos = si.seen_x && si.seen_y;
+    *out = si.s;
+    return 0;
+}
+
+size_t settings_format(const Settings *s, char *buf, size_t cap)
+{
+    Out o = {buf, cap, 0, 1};
+    outf(&o, "difficulty=%s\ncustom=%d,%d,%d\nmarks=%d\ncolor=%d\nsound=%d\nzoom=%d\n",
+         level_name(s->level), s->custom[0], s->custom[1], s->custom[2], s->marks != 0,
+         s->color != 0, s->sound != 0, s->zoom);
+    if (s->has_pos)
+        outf(&o, "x=%d\ny=%d\n", s->x, s->y);
+    return o.ok ? o.len : 0;
+}
+
+void best_default(Best best[3])
+{
+    for (int i = 0; i < 3; i++) {
+        best[i].seconds = 999;
+        strcpy(best[i].name, "Anonymous");
+    }
+}
+
+/* At most 32 code points and NAME_MAX_BYTES bytes, cut between characters. */
+static void copy_name(char *dst, const char *src)
+{
+    size_t i = 0;
+    for (int points = 0; src[i] && points < 32; points++) {
+        unsigned char c = (unsigned char)src[i];
+        size_t len = c >= 0xF0 ? 4 : c >= 0xE0 ? 3 : c >= 0xC0 ? 2 : 1;
+        size_t k = 1;
+        while (k < len && src[i + k])
+            k++;
+        if (k < len || i + len > NAME_MAX_BYTES)
+            break;
+        i += len;
+    }
+    memcpy(dst, src, i);
+    dst[i] = 0;
+}
+
+static int best_line(char *key, char *value, void *ctx)
+{
+    Best *best = ctx;
+    Level level;
+    if (!level_from_name(key, &level) || level == CUSTOM)
+        return 0;                               /* unknown keys are ignored */
+    char *comma = strchr(value, ',');
+    int seconds;
+    if (!comma)
+        return -1;
+    *comma = 0;
+    if (!parse_int(value, &seconds) || seconds < 1 || seconds > 999)
+        return -1;
+    best[level].seconds = seconds;
+    copy_name(best[level].name, comma + 1);
+    return 0;
+}
+
+int best_parse(const char *text, Best out[3])
+{
+    Best b[3];
+    best_default(b);
+    if (ini_each(text, best_line, b) != 0)
+        return -1;
+    memcpy(out, b, sizeof b);
+    return 0;
+}
+
+size_t best_format(const Best best[3], char *buf, size_t cap)
+{
+    Out o = {buf, cap, 0, 1};
+    for (int i = 0; i < 3; i++)
+        outf(&o, "%s=%d,%s\n", level_name((Level)i), best[i].seconds, best[i].name);
+    return o.ok ? o.len : 0;
+}
+
+enum { POINTS_MAX = 8 * MAX_W * MAX_H };   /* "29,23;" is 6 chars; room to spare */
+
+typedef struct {
+    unsigned seen;
+    int version, seconds, running, width, height;
+    Level level;
+    State state;
+    char mines[POINTS_MAX], exploded[POINTS_MAX], marks[(MAX_W + 1) * MAX_H + 1];
+} GameIni;
+
+enum {
+    SEEN_VERSION = 1, SEEN_LEVEL = 2, SEEN_SECONDS = 4, SEEN_RUNNING = 8, SEEN_WIDTH = 16,
+    SEEN_HEIGHT = 32, SEEN_STATE = 64, SEEN_MINES = 128, SEEN_EXPLODED = 256, SEEN_MARKS = 512,
+    SEEN_ALL = 1023
+};
+
+static int copy_value(char *dst, size_t cap, const char *value)
+{
+    size_t n = strlen(value);
+    if (n >= cap)
+        return -1;
+    memcpy(dst, value, n + 1);
+    return 0;
+}
+
+static int game_line(char *key, char *value, void *ctx)
+{
+    GameIni *g = ctx;
+    static const struct { const char *key; unsigned bit; } FIELDS[] = {
+        {"version", SEEN_VERSION}, {"difficulty", SEEN_LEVEL}, {"seconds", SEEN_SECONDS},
+        {"timer_running", SEEN_RUNNING}, {"width", SEEN_WIDTH}, {"height", SEEN_HEIGHT},
+        {"state", SEEN_STATE}, {"mines", SEEN_MINES}, {"exploded", SEEN_EXPLODED},
+        {"marks", SEEN_MARKS},
+    };
+    unsigned bit = 0;
+    for (size_t i = 0; i < sizeof FIELDS / sizeof FIELDS[0]; i++)
+        if (strcmp(key, FIELDS[i].key) == 0)
+            bit = FIELDS[i].bit;
+    g->seen |= bit;
+    switch (bit) {
+    case SEEN_VERSION: return parse_int(value, &g->version) ? 0 : -1;
+    case SEEN_LEVEL: return level_from_name(value, &g->level) ? 0 : -1;
+    case SEEN_SECONDS: return parse_int(value, &g->seconds) ? 0 : -1;
+    case SEEN_RUNNING: return parse_flag(value, &g->running);
+    case SEEN_WIDTH: return parse_int(value, &g->width) ? 0 : -1;
+    case SEEN_HEIGHT: return parse_int(value, &g->height) ? 0 : -1;
+    case SEEN_STATE:
+        for (int s = READY; s <= LOST; s++)
+            if (strcmp(value, STATE_NAMES[s]) == 0) {
+                g->state = (State)s;
+                return 0;
+            }
+        return -1;
+    case SEEN_MINES: return copy_value(g->mines, sizeof g->mines, value);
+    case SEEN_EXPLODED: return copy_value(g->exploded, sizeof g->exploded, value);
+    case SEEN_MARKS: return copy_value(g->marks, sizeof g->marks, value);
+    }
+    return 0;                                   /* unknown keys are ignored */
+}
+
+/* "x,y;x,y" (empty for none) into out; the count, or -1. */
+static int parse_points(char *s, int (*out)[2])
+{
+    int n = 0;
+    while (*s) {
+        char *semi = strchr(s, ';');
+        if (semi)
+            *semi = 0;
+        if (n == MAX_W * MAX_H || !parse_ints(s, out[n], 2))
+            return -1;
+        n++;
+        if (!semi)
+            break;
+        s = semi + 1;
+        if (!*s)
+            return -1;                          /* a trailing ';' */
+    }
+    return n;
+}
+
+int game_parse(const char *text, Game *out)
+{
+    static GameIni gi;
+    static int points[MAX_W * MAX_H][2];
+    memset(&gi, 0, sizeof gi);
+    if (ini_each(text, game_line, &gi) != 0 || gi.seen != SEEN_ALL)
+        return -1;
+    if (gi.version != 1 || gi.seconds < 0 || gi.seconds > TIMER_MAX)
+        return -1;
+
+    Board b;
+    int n = parse_points(gi.mines, points);
+    if (n < 0 || board_init(&b, gi.width, gi.height, (const int (*)[2])points, n) != 0
+        || b.mine_count != n)
+        return -1;                              /* off the board, or repeated */
+
+    char *row = gi.marks;
+    for (int y = 0; y < b.height; y++) {
+        char *slash = strchr(row, '/');
+        if ((slash != NULL) != (y < b.height - 1))
+            return -1;
+        if (slash)
+            *slash = 0;
+        if ((int)strlen(row) != b.width)
+            return -1;
+        for (int x = 0; x < b.width; x++) {
+            const char *m = strchr(".F?#", row[x]);
+            if (!m || !row[x])
+                return -1;
+            b.mark[y][x] = (unsigned char)(m - ".F?#");
+            b.revealed_count += b.mark[y][x] == REVEALED;
+        }
+        row = slash ? slash + 1 : row;
+    }
+    b.state = gi.state;
+
+    n = parse_points(gi.exploded, points);
+    if (n < 0)
+        return -1;
+    for (int i = 0; i < n; i++) {
+        int x = points[i][0], y = points[i][1];
+        if (x < 0 || x >= b.width || y < 0 || y >= b.height || !b.mine[y][x])
+            return -1;                          /* exploded must be a mine */
+        b.exploded[y][x] = 1;
+    }
+
+    int dims[3] = {b.width, b.height, b.mine_count}, want[3];
+    if (gi.level == CUSTOM)
+        clamp_custom(dims[0], dims[1], dims[2], want);
+    else
+        memcpy(want, PRESETS[gi.level], sizeof want);
+    if (memcmp(dims, want, sizeof dims) != 0)
+        return -1;
+
+    game_init(out, gi.level, &b);
+    out->seconds = gi.seconds;
+    out->timer_running = gi.running;
+    out->paused = 1;                            /* spec §5: resumes on first input */
+    return 0;
+}
+
+static void out_points(Out *o, const unsigned char cells[MAX_H][MAX_W], const Board *b)
+{
+    int any = 0;
+    for (int x = 0; x < b->width; x++)
+        for (int y = 0; y < b->height; y++)
+            if (cells[y][x]) {
+                outf(o, "%s%d,%d", any ? ";" : "", x, y);
+                any = 1;
+            }
+}
+
+size_t game_format(const Game *g, char *buf, size_t cap)
+{
+    const Board *b = &g->board;
+    Out o = {buf, cap, 0, 1};
+    outf(&o, "version=1\ndifficulty=%s\nseconds=%d\ntimer_running=%d\nwidth=%d\nheight=%d\n"
+             "state=%s\nmines=", level_name(g->level), g->seconds, g->timer_running != 0,
+         b->width, b->height, state_name(b->state));
+    out_points(&o, b->mine, b);
+    outf(&o, "\nexploded=");
+    out_points(&o, b->exploded, b);
+    outf(&o, "\nmarks=");
+    for (int y = 0; y < b->height; y++) {
+        if (y)
+            outf(&o, "/");
+        for (int x = 0; x < b->width; x++)
+            outf(&o, "%c", ".F?#"[b->mark[y][x]]);
+    }
+    outf(&o, "\n");
+    return o.ok ? o.len : 0;
+}
+
+static void outf(Out *o, const char *fmt, ...)
+{
+    if (!o->ok)
+        return;
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(o->buf + o->len, o->cap - o->len, fmt, ap);
+    va_end(ap);
+    if (n < 0 || (size_t)n >= o->cap - o->len)
+        o->ok = 0;
+    else
+        o->len += (size_t)n;
+}
+
+/* --- RNG ---------------------------------------------------------------------- */
+
+uint64_t rng_seed(uint64_t x)
+{
+    x += 0x9E3779B97F4A7C15ull;                 /* splitmix64 */
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
+    x ^= x >> 31;
+    return x ? x : 0x9E3779B97F4A7C15ull;
+}
+
+uint64_t rng_next(uint64_t *state)
+{
+    uint64_t x = *state;                        /* xorshift64* */
+    x ^= x >> 12;
+    x ^= x << 25;
+    x ^= x >> 27;
+    *state = x;
+    return x * 0x2545F4914F6CDD1Dull;
+}
+
+void game_new(Game *g, Level level, const int custom[3], uint64_t *rng)
+{
+    static int order[MAX_W * MAX_H], mines[MAX_W * MAX_H][2];
+    int d[3];
+    level_dims(level, custom, d);
+    int cells = d[0] * d[1];
+    for (int i = 0; i < cells; i++)
+        order[i] = i;
+    for (int i = 0; i < d[2]; i++) {           /* partial Fisher-Yates */
+        int j = i + (int)(rng_next(rng) % (uint64_t)(cells - i));
+        int t = order[i];
+        order[i] = order[j];
+        order[j] = t;
+        mines[i][0] = order[i] % d[0];
+        mines[i][1] = order[i] / d[0];
+    }
+    Board b;
+    board_init(&b, d[0], d[1], (const int (*)[2])mines, d[2]);
+    game_init(g, level, &b);
 }

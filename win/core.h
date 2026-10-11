@@ -149,5 +149,29 @@ const char *sound_name(SoundName name);
 void render_session(const Session *s, uint32_t *pixels, int stride);
 const char *core_keys_text(void);   /* the Keys dialog text, from session.KEYS */
 
+/* --- sound.py: the three sounds as WAV files, byte for byte ----------------- */
+
+enum { WAV_MAX = 20000, INI_MAX = 16384 };
+size_t wav_build(SoundName name, unsigned char *out, size_t cap);
+
+/* --- store.py's rules, in Windows' INI files (spec §3.5) --------------------- */
+/* Parsers start from the defaults and return 0, or -1 for a file to move
+ * aside. Formatters return the length written, or 0 if `cap` is too small. */
+
+void settings_default(Settings *s);
+int settings_parse(const char *text, Settings *out);
+size_t settings_format(const Settings *s, char *buf, size_t cap);
+void best_default(Best best[3]);
+int best_parse(const char *text, Best out[3]);
+size_t best_format(const Best best[3], char *buf, size_t cap);
+int game_parse(const char *text, Game *out);    /* a resumed game starts paused */
+size_t game_format(const Game *g, char *buf, size_t cap);
+
+/* --- RNG: xorshift64*, seeded through splitmix64 ----------------------------- */
+
+uint64_t rng_seed(uint64_t entropy);
+uint64_t rng_next(uint64_t *state);
+void game_new(Game *g, Level level, const int custom[3], uint64_t *rng);
+
 #endif /* RC_INVOKED */
 #endif

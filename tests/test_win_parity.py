@@ -276,5 +276,10 @@ class Pixels(Parity):
         self.check(random_walk(seed=2, sessions=30, steps=30, render_every=10))
 
 
+class Sounds(Parity):
+    def test_wav_bytes(self):
+        self.check(["wav tick tick.wav", "wav win win.wav", "wav lose lose.wav"])
+
+
 if __name__ == "__main__":
     unittest.main()
