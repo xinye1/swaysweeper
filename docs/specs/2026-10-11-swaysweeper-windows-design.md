@@ -1,7 +1,7 @@
 # swaysweeper for Windows — design
 
-*2026-10-11. Status: revised after an adversarial review (17 findings folded in). Five taste
-questions are open (§10); the spec counts as approved once Xinye has answered them.*
+*2026-10-11. Status: approved. Revised after an adversarial review (17 findings folded in);
+Xinye took the recommendation on all five taste questions.*
 
 A native Win32 version of swaysweeper: the same game as the Linux one, in C against the Win32 API
 and GDI, shipped as one `.exe`. The Linux design
@@ -177,7 +177,9 @@ regenerates both in memory and fails if either differs. The icon images are:
   - `ReleaseCapture` itself sends `WM_CAPTURECHANGED`, so that message is ignored while a
     self-release flag is set.
   - Any other `WM_CAPTURECHANGED` resets the gesture state.
-- **Activation click:** see taste question 1 (§10).
+- **Activation click:** it plays. Unlike winmine, which drops the first press after a
+  click-activation (windowing.c:495-538, 586-589), `WM_MOUSEACTIVATE` is left to `DefWindowProc`
+  (`MA_ACTIVATE`), so the click that brings the window forward also acts, as on Linux.
 - **Spurious motion:** a `WM_MOUSEMOVE` at an unchanged position is ignored. Windows synthesises
   these after dialogs close and on resize, and they'd wrongly hide the keyboard cursor.
 
@@ -205,7 +207,8 @@ The process is PerMonitorV2 DPI-aware (manifest), so Windows never bitmap-stretc
 
 **Scale**
 
-- `base = max(1, (dpi + 48) / 96)` in integer arithmetic (rounding; see taste question 2, §10).
+- `base = max(1, (dpi + 48) / 96)` in integer arithmetic, i.e. rounded: 125 % gives ×1, 150 %
+  and 175 % give ×2. Zoom ×2 covers anyone who finds ×1 small.
 - `want = base × (zoom ? 2 : 1)`.
 - `scale` = the largest integer ≤ `want` whose window fits the monitor's work area, minimum 1.
 
@@ -213,8 +216,10 @@ The process is PerMonitorV2 DPI-aware (manifest), so Windows never bitmap-stretc
 `GetSystemMetricsForDpi`.
 
 - Zoom ×2 is enabled only while `base × 2` fits.
-- When it stops fitting, the item greys out and the game shows at `base`. What happens to the
-  saved preference is taste question 3, §10.
+- When it stops fitting (e.g. a laptop undocked), the item greys out and the game shows at
+  `base`, **for this session only**: `settings.ini` keeps `zoom=2` and the greyed item keeps its
+  check. ×2 comes back by itself once it fits again; the scale is recomputed on `WM_DPICHANGED`,
+  `WM_DISPLAYCHANGE` and `WM_SETTINGCHANGE` (`SPI_SETWORKAREA`).
 
 **`WM_GETDPISCALEDSIZE`** returns the exact size for the new DPI.
 
@@ -293,7 +298,8 @@ The file format is Windows-only; the two builds never share state.
 
 ### 3.6 Dialogs
 
-Modal templates in `.rc`. The font is taste question 5, §10.
+Modal templates in `.rc`, in `DS_SHELLFONT` with `FONT 8, "MS Shell Dlg 2"` (Tahoma), true to
+the period rather than Segoe UI.
 
 - **Custom Field:** Height, Width and Mines edit boxes, OK and Cancel. Values are read with
   `GetDlgItemInt`; a failure (e.g. pasted non-digits, which `ES_NUMBER` doesn't block) counts as
@@ -484,30 +490,4 @@ The repo has no CI today. It gets termtris's pattern.
 - ARM64, 32-bit, an installer, MSI or winget, and code signing.
 - Sharing state with the Linux build.
 - High-contrast themes and screen readers. The game area is a bitmap, as winmine's was.
-- Winmine's XYZZY cheat and its F4/F5/F6 keys (windowing.c:11, 707-765), unless taste question 4
-  says otherwise.
-
-## 10. Open taste questions (for Xinye)
-
-Each has a recommendation. Once answered, they're folded into §3 and this section goes.
-
-1. **Swallow the click that activates the window?** Winmine drops the first press after a
-   click-activation (windowing.c:495-538, 586-589).
-   - (a) Yes, faithful.
-   - (b) **No (recommended).** The first click plays, matching Linux; winmine's behaviour was a
-     known annoyance.
-   - (c) Swallow it only on the board.
-2. **Base scale at 125 % / 175 %.**
-   - (a) **Round (recommended).** 125 % gives ×1, 175 % gives ×2, and Zoom ×2 covers anyone who
-     finds ×1 small.
-   - (b) Ceiling, capped by fit. 125 % gives ×2.
-   - (c) Floor. Always crisp, often small.
-3. **When Zoom ×2 stops fitting** (e.g. a laptop undocked):
-   - (a) Turn it off and save that, as Linux does.
-   - (b) **Turn it off for this session but keep the saved preference (recommended).**
-4. **The XYZZY cheat:**
-   - (a) **Omit (recommended).**
-   - (b) Implement it, as winmine lore.
-5. **Dialog font:**
-   - (a) **`MS Shell Dlg 2` (Tahoma), period-faithful (recommended).**
-   - (b) Segoe UI 9 pt, native on Windows 10/11.
+- Winmine's XYZZY cheat and its F4/F5/F6 keys (windowing.c:11, 707-765).
