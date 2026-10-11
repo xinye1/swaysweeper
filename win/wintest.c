@@ -284,7 +284,7 @@ int wmain(int argc, wchar_t **argv)
 
     /* 2. It paints the resumed game. */
     check(shoot(w, scale, &s, "01-resumed"), "PrintWindow captures the client area");
-    check(at(&s, 83, 19) == 0xFFFF00, "the smiley is yellow");
+    check(at(&s, 83, 22) == 0xFFFF00, "the smiley is yellow");
     check(at(&s, 28, 71) == 0xFFFFFF && at(&s, 43, 86) == 0x808080, "a covered square is raised");
     check(at(&s, 13, 56) == 0xC0C0C0 && at(&s, 12, 55) == 0x808080, "the saved open square is open");
     check(at(&s, 82, 58) == 0xFF0000, "the saved flag is back");
