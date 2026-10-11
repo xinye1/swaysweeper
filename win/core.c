@@ -835,6 +835,17 @@ typedef int (*IniLine)(char *key, char *value, void *ctx);
 
 /* Calls fn per `key=value` line: split on the first '=', a UTF-8 BOM and CRLF
  * tolerated, blank lines skipped. -1 on a line with no '=' or a refused value. */
+/* Spaces and tabs around a key or value, as a hand edit in Notepad leaves them. */
+static char *ini_trim(char *s)
+{
+    while (*s == ' ' || *s == '\t')
+        s++;
+    size_t n = strlen(s);
+    while (n && (s[n - 1] == ' ' || s[n - 1] == '\t'))
+        s[--n] = 0;
+    return s;
+}
+
 static int ini_each(const char *text, IniLine fn, void *ctx)
 {
     size_t len = strlen(text);
@@ -860,7 +871,7 @@ static int ini_each(const char *text, IniLine fn, void *ctx)
                 rc = -1;
             else {
                 *eq = 0;
-                rc = fn(p, eq + 1, ctx);
+                rc = fn(ini_trim(p), ini_trim(eq + 1), ctx);
             }
         }
         p = next;

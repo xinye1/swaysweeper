@@ -103,6 +103,13 @@ static void test_settings_tolerate_bom_and_crlf(void)
     CHECK(s.level == EXPERT && s.sound == 1 && s.zoom == 2 && s.marks == 1);
 }
 
+static void test_settings_tolerate_spaces_around_values(void)
+{
+    Settings s;
+    CHECK(settings_parse("difficulty = expert\nzoom = 2 \n\tsound\t=\t1\t\r\n", &s) == 0);
+    CHECK(s.level == EXPERT && s.zoom == 2 && s.sound == 1);
+}
+
 static void test_settings_rules(void)
 {
     Settings s;
@@ -214,6 +221,7 @@ int main(void)
     test_board_rejects_out_of_range();
     test_settings_round_trip();
     test_settings_tolerate_bom_and_crlf();
+    test_settings_tolerate_spaces_around_values();
     test_settings_rules();
     test_best_round_trip_and_names();
     test_game_round_trip();
