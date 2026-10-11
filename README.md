@@ -34,10 +34,37 @@ colours and all. Inspired by [omasweeper](https://github.com/jankeesvw/omasweepe
 
 ## Install
 
+### Linux (sway)
+
     make install      # ~/.local/{bin,share}; a desktop entry with an absolute Exec=
     make test
 
 Needs `gtk4`, `python-gobject`, `python-cairo`; `pipewire` (`pw-play`) for sound.
+
+### Windows 10 and 11
+
+A native build: one `.exe`, real Windows menus and dialogs, no installer.
+Download `swaysweeper-windows-x86_64.exe` from the
+[releases](https://github.com/xinye1/swaysweeper/releases) and run it. For this beta:
+
+```powershell
+$url = "https://github.com/xinye1/swaysweeper/releases/download/v0.1.0-beta.2/swaysweeper-windows-x86_64.exe"
+Invoke-WebRequest $url -OutFile swaysweeper.exe
+(Get-FileHash swaysweeper.exe -Algorithm SHA256).Hash   # compare with the .sha256 on the release
+.\swaysweeper.exe
+```
+
+The exe isn't code-signed, so SmartScreen may warn on the first run: choose
+**More info → Run anyway**, or run `Unblock-File .\swaysweeper.exe` once.
+Minimising pauses the clock, as winmine did, and the window remembers where it was.
+
+To build it yourself, install [MSYS2](https://www.msys2.org), open the
+**UCRT64** shell and run:
+
+```sh
+pacman -S --needed mingw-w64-ucrt-x86_64-gcc make
+make -C win CC=gcc LDFLAGS="-static -s"
+```
 
 ## Screenshot
 
@@ -49,3 +76,5 @@ renders `screenshots/win95.png` offscreen (no window opens).
 
 `$XDG_STATE_HOME/swaysweeper/` — settings, best times and the game in progress.
 A file that will not parse is moved aside to `*.bad`; the game always starts.
+
+On Windows: `%LOCALAPPDATA%\swaysweeper\` (`*.ini`), with the same rules.

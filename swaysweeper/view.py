@@ -1,4 +1,4 @@
-"""The board widget: paints through render.draw, turns raw input into actions."""
+"""The board widget: paints the session, turns raw input into session events."""
 
 import cairo
 import gi
@@ -10,24 +10,19 @@ from gi.repository import Gdk, Graphene, Gtk  # noqa: E402
 
 from . import geometry as G  # noqa: E402
 from . import render  # noqa: E402
-from .board import REVEALED  # noqa: E402
-from .gestures import Gestures  # noqa: E402
 from .colours import rgb  # noqa: E402
 
-_DIRS = {"Left": (-1, 0), "h": (-1, 0), "Right": (1, 0), "l": (1, 0),
-         "Up": (0, -1), "k": (0, -1), "Down": (0, 1), "j": (0, 1)}
 _MASKS = ((Gdk.ModifierType.BUTTON1_MASK, 1), (Gdk.ModifierType.BUTTON2_MASK, 2),
           (Gdk.ModifierType.BUTTON3_MASK, 3))
 _INPUT = (Gdk.EventType.BUTTON_PRESS, Gdk.EventType.BUTTON_RELEASE,
           Gdk.EventType.MOTION_NOTIFY)
+_KEY_NAMES = {"KP_Enter": "Return"}
 
 
 class BoardView(Gtk.DrawingArea):
     def __init__(self, app):
         super().__init__()
         self.app = app
-        self.gestures = Gestures()
-        self.cursor = None
         self.cache = render.CellCache()
         self.set_focusable(True)
         self.set_draw_func(self._draw)
@@ -55,20 +50,16 @@ class BoardView(Gtk.DrawingArea):
         self.set_content_height(lay.height * z)
         self.queue_draw()
 
-    def reset_cursor(self):
-        self.cursor = None
-
     def _surface_to_widget(self, sx, sy):
         native = self.get_native()
         nx, ny = native.get_surface_transform()
         ok, p = native.compute_point(self, Graphene.Point().init(sx - nx, sy - ny))
         return (p.x, p.y) if ok else (-1.0, -1.0)
 
-    def _hit(self, sx, sy):
+    def _game_point(self, sx, sy):
         wx, wy = self._surface_to_widget(sx, sy)
-        ox, oy, z, lay = self._origin()
-        gx, gy = (wx - ox) / z, (wy - oy) / z
-        return G.cell_at(lay, gx, gy), G.on_face(lay, gx, gy)
+        ox, oy, z, _lay = self._origin()
+        return (wx - ox) / z, (wy - oy) / z
 
     # --- input ---------------------------------------------------------------
 
@@ -84,62 +75,30 @@ class BoardView(Gtk.DrawingArea):
         ok, sx, sy = event.get_position()
         if not ok:
             return False
-        cell, face = self._hit(sx, sy)
+        px, py = self._game_point(sx, sy)
+        session = self.app.session
         if kind == Gdk.EventType.MOTION_NOTIFY:
-            self.gestures.motion(cell, face)
-            had_cursor = self.cursor is not None
-            if cell is not None:
-                self.cursor = None
-            if self.gestures.mode or (had_cursor and self.cursor is None):
-                self.queue_draw()
+            self.app.apply(session.motion(px, py))
             return False
         button = event.get_button()
         state = event.get_modifier_state()
         held = frozenset(b for mask, b in _MASKS if state & mask)
         if kind == Gdk.EventType.BUTTON_PRESS:
             self.grab_focus()
-            actions = self.gestures.press(button, cell, face,
-                                          shift=bool(state & Gdk.ModifierType.SHIFT_MASK),
-                                          active=not self.app.game.board.over, held=held)
+            effects = session.press(button, px, py,
+                                    shift=bool(state & Gdk.ModifierType.SHIFT_MASK), held=held)
         else:
-            actions = self.gestures.release(button, cell, face, held=held)
-        for action in actions:
-            self.app.act(action)
-        self.queue_draw()
+            effects = session.release(button, px, py, held=held)
+        self.app.apply(effects)
         return True
 
     def key(self, keyval, state):
         if state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.ALT_MASK):
             return False
         name = Gdk.keyval_name(keyval)
-        b = self.app.game.board
-        if name in _DIRS:
-            if self.cursor is None:
-                self.cursor = (b.width // 2, b.height // 2)
-            else:
-                dx, dy = _DIRS[name]
-                x, y = self.cursor
-                self.cursor = (min(max(x + dx, 0), b.width - 1),
-                               min(max(y + dy, 0), b.height - 1))
-            self.queue_draw()
-            return True
-        if name == "question":
-            self.app.activate_action("keys", None)
-            return True
-        if self.cursor is None:
-            return False
-        x, y = self.cursor
-        if name in ("space", "Return", "KP_Enter"):
-            chord = b.marks[y][x] == REVEALED
-            self.app.act(("chord" if chord else "reveal", x, y))
-        elif name == "f":
-            self.app.act(("mark", x, y))
-        elif name == "c":
-            self.app.act(("chord", x, y))
-        else:
-            return False
-        self.queue_draw()
-        return True
+        effects = self.app.session.key(_KEY_NAMES.get(name, name))
+        self.app.apply(effects)
+        return ("unhandled",) not in effects
 
     # --- paint ---------------------------------------------------------------
 
@@ -151,8 +110,6 @@ class BoardView(Gtk.DrawingArea):
         cr.paint()
         cr.translate(ox, oy)
         cr.scale(z, z)
-        game = self.app.game
-        render.draw(cr, game, colours,
-                    pressed=self.gestures.preview(game.board.width, game.board.height),
-                    face=self.gestures.face(game.status),
-                    cursor=self.cursor, cache=self.cache)
+        face, pressed, cursor = self.app.session.paint_state()
+        render.draw(cr, self.app.game, colours, pressed=pressed, face=face,
+                    cursor=cursor, cache=self.cache)

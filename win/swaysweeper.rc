@@ -1,0 +1,128 @@
+#pragma code_page(65001)
+#include <windows.h>
+#include "core.h"
+#include "resource.h"
+
+IDI_APP ICON "swaysweeper.ico"
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "swaysweeper.manifest"
+
+IDM_MENU MENU
+BEGIN
+    POPUP "&Game"
+    BEGIN
+        MENUITEM "&New\tF2", ID_NEW
+        MENUITEM SEPARATOR
+        MENUITEM "&Beginner", ID_BEGINNER
+        MENUITEM "&Intermediate", ID_INTERMEDIATE
+        MENUITEM "&Expert", ID_EXPERT
+        MENUITEM "&Custom…", ID_CUSTOM
+        MENUITEM SEPARATOR
+        MENUITEM "&Marks (?)", ID_MARKS
+        MENUITEM "Co&lor", ID_COLOR
+        MENUITEM "&Sound", ID_SOUND
+        MENUITEM "&Zoom ×2", ID_ZOOM
+        MENUITEM SEPARATOR
+        MENUITEM "Best &Times…", ID_BEST
+        MENUITEM SEPARATOR
+        MENUITEM "E&xit\tCtrl+Q", ID_EXIT
+    END
+    POPUP "&Help"
+    BEGIN
+        MENUITEM "&Keys…\t?", ID_KEYS
+        MENUITEM "&About swaysweeper", ID_ABOUT
+    END
+END
+
+IDA_ACCEL ACCELERATORS
+BEGIN
+    VK_F2, ID_NEW, VIRTKEY
+    "Q", ID_EXIT, VIRTKEY, CONTROL
+END
+
+IDD_CUSTOM DIALOGEX 0, 0, 132, 72
+STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Custom Field"
+FONT 8, "MS Shell Dlg 2", 0, 0, 0x1
+BEGIN
+    LTEXT "&Height:", -1, 8, 10, 36, 8
+    EDITTEXT IDC_HEIGHT, 46, 8, 32, 12, ES_NUMBER
+    LTEXT "&Width:", -1, 8, 28, 36, 8
+    EDITTEXT IDC_WIDTH, 46, 26, 32, 12, ES_NUMBER
+    LTEXT "&Mines:", -1, 8, 46, 36, 8
+    EDITTEXT IDC_MINES, 46, 44, 32, 12, ES_NUMBER
+    DEFPUSHBUTTON "OK", IDOK, 88, 8, 36, 14
+    PUSHBUTTON "Cancel", IDCANCEL, 88, 26, 36, 14
+END
+
+IDD_NAME DIALOGEX 0, 0, 140, 78
+STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Congratulations"
+FONT 8, "MS Shell Dlg 2", 0, 0, 0x1
+BEGIN
+    CTEXT "", IDC_PROMPT, 8, 8, 124, 26
+    EDITTEXT IDC_NAME, 20, 38, 100, 12, ES_AUTOHSCROLL
+    DEFPUSHBUTTON "OK", IDOK, 52, 58, 36, 14
+END
+
+IDD_BEST DIALOGEX 0, 0, 274, 82
+STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Fastest Mine Sweepers"
+FONT 8, "MS Shell Dlg 2", 0, 0, 0x1
+BEGIN
+    LTEXT "Beginner:", -1, 8, 10, 48, 8
+    RTEXT "", IDC_SECS0, 56, 10, 44, 8
+    LTEXT "", IDC_NAME0, 106, 10, 160, 8, SS_NOPREFIX | SS_ENDELLIPSIS
+    LTEXT "Intermediate:", -1, 8, 24, 48, 8
+    RTEXT "", IDC_SECS1, 56, 24, 44, 8
+    LTEXT "", IDC_NAME1, 106, 24, 160, 8, SS_NOPREFIX | SS_ENDELLIPSIS
+    LTEXT "Expert:", -1, 8, 38, 48, 8
+    RTEXT "", IDC_SECS2, 56, 38, 44, 8
+    LTEXT "", IDC_NAME2, 106, 38, 160, 8, SS_NOPREFIX | SS_ENDELLIPSIS
+    PUSHBUTTON "&Reset Scores", IDC_RESET, 8, 60, 60, 14
+    DEFPUSHBUTTON "OK", IDOK, 230, 60, 36, 14
+END
+
+IDD_KEYS DIALOGEX 0, 0, 290, 196
+STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "swaysweeper keys"
+FONT 8, "MS Shell Dlg 2", 0, 0, 0x1
+BEGIN
+    LTEXT "", IDC_KEYS_TEXT, 8, 8, 274, 160
+    DEFPUSHBUTTON "OK", IDOK, 246, 174, 36, 14
+END
+
+IDD_ABOUT DIALOGEX 0, 0, 180, 112
+STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About swaysweeper"
+FONT 8, "MS Shell Dlg 2", 0, 0, 0x1
+BEGIN
+    ICON IDI_APP, -1, 8, 8, 20, 20
+    LTEXT "", IDC_ABOUT_TEXT, 36, 8, 136, 74
+    DEFPUSHBUTTON "OK", IDOK, 136, 90, 36, 14
+END
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION SWAYSWEEPER_VERSION_NUM
+PRODUCTVERSION SWAYSWEEPER_VERSION_NUM
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "xinye1"
+            VALUE "FileDescription", "swaysweeper"
+            VALUE "FileVersion", SWAYSWEEPER_VERSION
+            VALUE "InternalName", "swaysweeper"
+            VALUE "LegalCopyright", "MIT License"
+            VALUE "OriginalFilename", "swaysweeper.exe"
+            VALUE "ProductName", "swaysweeper"
+            VALUE "ProductVersion", SWAYSWEEPER_VERSION
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

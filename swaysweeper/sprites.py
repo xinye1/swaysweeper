@@ -225,6 +225,13 @@ _FEATURES = {
 }
 
 
+def _smiley(features):
+    face = _stamp(_blank(17, 17), _CIRCLE, 0, 0)
+    for row, art in features:
+        _stamp(face, [art], 0, row)
+    return _rows(face)
+
+
 def _face(features, pressed):
     grid = [["f"] * 24 for _ in range(24)]
     if pressed:
@@ -240,15 +247,13 @@ def _face(features, pressed):
                 grid[23 - i][x] = "D"
             for y in range(i + 1, 24):
                 grid[y][23 - i] = "D"
-    face = _stamp(_blank(17, 17), _CIRCLE, 0, 0)
-    for row, art in features:
-        _stamp(face, [art], 0, row)
     off = 4 if pressed else 3
-    return _rows(_stamp(grid, _rows(face), off, off))
+    return _rows(_stamp(grid, _smiley(features), off, off))
 
 
 FACES = {name: _face(f, pressed=False) for name, f in _FEATURES.items()}
 FACES["pressed"] = _face(_FEATURES["normal"], pressed=True)
+SMILEY = _smiley(_FEATURES["normal"])     # the face alone, 17x17: the Windows icon
 
 # --- LED digits: seven tapered segments in 13x23 -----------------------------
 

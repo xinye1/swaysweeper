@@ -10,8 +10,9 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import colours, dialogs, geometry, store  # noqa: E402
-from .board import LOST, PLAYING, READY, WON  # noqa: E402
-from .game import DIFFICULTIES, Game  # noqa: E402
+from .board import PLAYING  # noqa: E402
+from .game import Game  # noqa: E402
+from .session import Session  # noqa: E402
 from .sound import Sound  # noqa: E402
 from .view import BoardView  # noqa: E402
 
@@ -23,18 +24,19 @@ class App(Gtk.Application):
         super().__init__(application_id=APP_ID)
         self.store = store.Store(store.state_dir())
         self.settings = self.store.load("settings", store.settings_from) or store.default_settings()
-        self.best = self.store.load("best", store.best_from) or store.default_best()
+        best = self.store.load("best", store.best_from) or store.default_best()
         self.sound = Sound(Path(GLib.get_user_cache_dir()) / "swaysweeper")
         saved = self.store.load("game", Game.from_dict)
         if saved is not None and saved.status == PLAYING:
-            self.game = saved
+            game = saved
             self.settings["difficulty"] = saved.difficulty
             if saved.difficulty == "custom":
                 b = saved.board
                 self.settings["custom"] = [b.width, b.height, b.mine_count]
         else:
             self.store.delete("game")
-            self.game = self._fresh()
+            game = self._fresh()
+        self.session = Session(game, self.settings, best)
         self.window = None
         self.view = None
         self._timer = 0
@@ -49,6 +51,18 @@ class App(Gtk.Application):
     @property
     def zoom(self):
         return self.settings["zoom"]
+
+    @property
+    def game(self):
+        return self.session.game
+
+    @property
+    def best(self):
+        return self.session.best
+
+    @best.setter
+    def best(self, value):
+        self.session.best = value
 
     def _fresh(self):
         return Game.new(self.settings["difficulty"], tuple(self.settings["custom"]))
@@ -205,45 +219,29 @@ class App(Gtk.Application):
 
     # --- play ----------------------------------------------------------------
 
-    def act(self, action):
-        kind = action[0]
-        if kind == "new":
-            self.new_game()
-            return
-        before = self.game.status
-        _, x, y = action
-        if kind == "reveal":
-            self.game.release(x, y)
-        elif kind == "chord":
-            self.game.release(x, y, chord=True)
-        elif kind == "mark":
-            self.game.mark(x, y, self.settings["marks"])
-        after = self.game.status
-        self._sync_timer()
-        self._save_game()
-        if self.view is not None:
-            self.view.queue_draw()
-        if before != after:
-            self._status_changed(before, after)
+    def apply(self, effects, sync=True):
+        for effect in effects:
+            kind = effect[0]
+            if kind == "save":
+                self._save("game", self.game.to_dict())
+            elif kind == "delete":
+                self.store.delete("game")
+            elif kind == "sound":
+                self.sound.play(effect[1])
+            elif kind == "best":
+                self._best_time(effect[1])
+            elif kind == "new_game":
+                self.new_game()
+            elif kind == "show_keys":
+                self.activate_action("keys", None)
+            elif kind == "redraw" and self.view is not None:
+                self.view.queue_draw()
+        if sync:
+            self._sync_timer()
 
-    def _status_changed(self, before, after):
-        if self.settings["sound"]:
-            if before == READY and after == PLAYING:
-                self.sound.play("tick")
-            elif after == WON:
-                self.sound.play("win")
-            elif after == LOST:
-                self.sound.play("lose")
-        if after == WON:
-            self._won()
-
-    def _won(self):
-        level = self.game.difficulty
-        if level not in DIFFICULTIES or self.game.seconds >= self.best[level][0]:
-            return
-        # Record at once as Anonymous, so closing the window mid-dialog can
-        # never lose the time; the dialog only names it.
-        self.best[level] = [self.game.seconds, "Anonymous"]
+    def _best_time(self, level):
+        # Already recorded as Anonymous by the session, so closing the window
+        # mid-dialog can never lose the time; the dialog only names it.
         self._save("best", self.best)
 
         def named(name):
@@ -254,12 +252,7 @@ class App(Gtk.Application):
         dialogs.fastest_time(self.window, level, named)
 
     def new_game(self):
-        self.game = self._fresh()
-        self._sync_timer()
-        self._save_game()
-        if self.view is not None:
-            self.view.reset_cursor()
-            self.view.gestures.mode = None
+        self.apply(self.session.new(self._fresh()))
         self._apply_size()
 
     # --- timer ---------------------------------------------------------------
@@ -273,12 +266,7 @@ class App(Gtk.Application):
             self._timer = 0
 
     def _tick(self):
-        if self.game.tick():
-            if self.view is not None:
-                self.view.queue_draw()
-            self._save_game()
-            if self.settings["sound"]:
-                self.sound.play("tick")
+        self.apply(self.session.tick(), sync=False)
         if not self.game.ticking:
             self._timer = 0
             return GLib.SOURCE_REMOVE
@@ -291,12 +279,6 @@ class App(Gtk.Application):
             self.store.save(name, data)
         except OSError as exc:
             print(f"swaysweeper: cannot save {name}: {exc}", file=sys.stderr)
-
-    def _save_game(self):
-        if self.game.status == PLAYING:
-            self._save("game", self.game.to_dict())
-        else:
-            self.store.delete("game")
 
     # --- colours -------------------------------------------------------------
 

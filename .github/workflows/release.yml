@@ -1,0 +1,48 @@
+name: Release
+
+# Builds the Windows exe for a published GitHub release and attaches it.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.release.tag_name }}
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false # the upload step passes its token itself
+      - name: Check both versions match the tag
+        shell: bash
+        run: |
+          py=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' swaysweeper/__init__.py)
+          c=$(sed -n 's/^#define SWAYSWEEPER_VERSION "\(.*\)"$/\1/p' win/core.h)
+          if [ "v$py" != "$TAG" ] || [ "v$c" != "$TAG" ]; then
+            echo "__init__.py says $py and core.h says $c, but the release tag is $TAG"
+            exit 1
+          fi
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: mingw-w64-ucrt-x86_64-gcc make
+      - name: Test and build (static, stripped)
+        shell: msys2 {0}
+        run: |
+          make -C win test CC=gcc
+          make -C win swaysweeper.exe CC=gcc LDFLAGS="-static -s"
+      - name: Upload to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          asset=swaysweeper-windows-x86_64.exe
+          cp win/swaysweeper.exe "$asset"
+          sha256sum "$asset" > "$asset.sha256"
+          gh release upload "$TAG" "$asset" "$asset.sha256" --clobber

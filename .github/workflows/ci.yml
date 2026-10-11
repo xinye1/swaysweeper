@@ -1,0 +1,68 @@
+name: CI
+
+# Runs once per PR when it is ready to merge (opened as ready, or a draft
+# marked ready), not on every push. Re-run by hand with workflow_dispatch.
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Install GTK and PyGObject
+        run: sudo apt-get update && sudo apt-get install -y python3-gi python3-cairo gir1.2-gtk-4.0
+      - name: Python tests, including C parity with gcc
+        run: make test PY=/usr/bin/python3
+      - name: Portable C tests
+        run: make -C win test
+
+  windows:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          path-type: inherit
+          install: mingw-w64-ucrt-x86_64-gcc make
+      - name: Portable C tests
+        run: make -C win test CC=gcc
+      - name: Parity of the MinGW-built core with the Python implementation
+        run: |
+          python -m pip install pycairo
+          SWAYSWEEPER_REPLAY=win/replay.exe python -m unittest tests.test_win_parity -v
+      - name: Build the static exe
+        run: make -C win swaysweeper.exe CC=gcc LDFLAGS="-static -s"
+      - name: Only system DLLs
+        run: |
+          objdump -p win/swaysweeper.exe | grep 'DLL Name' | tee dlls.txt
+          ! grep -viE 'DLL Name: (KERNEL32|USER32|GDI32|WINMM|COMCTL32|SHELL32|ole32|api-ms-win-crt-[a-z0-9-]+)\.dll' dlls.txt
+      - name: Smoke test on the desktop
+        run: |
+          make -C win wintest.exe CC=gcc LDFLAGS=-static
+          cd win && ./wintest.exe ./swaysweeper.exe
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: captures
+          path: win/captures/
+          if-no-files-found: ignore

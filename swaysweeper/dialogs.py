@@ -4,22 +4,7 @@ from gi.repository import Gtk
 
 from . import __version__
 from .game import DIFFICULTIES, clamp_custom
-
-KEYS = """Mouse
-  Left click             open a square
-  Right click            flag, then ?, then clear
-  Both buttons, middle,  open around a satisfied number
-  or Shift+left
-  Smiley                 new game
-
-Keyboard
-  Arrows or h j k l      move the cursor
-  Space or Enter         open (around a number: chord)
-  f                      flag, then ?, then clear
-  c                      open around a number
-  F2                     new game
-  ?                      this list
-  Ctrl+Q                 exit"""
+from .session import KEYS
 
 
 def _window(parent, title):
