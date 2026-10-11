@@ -29,7 +29,7 @@ swaysweeper.exe: main.c core.c core.h sprites.h resource.h swaysweeper.res.o
 swaysweeper.res.o: swaysweeper.rc swaysweeper.manifest swaysweeper.ico core.h resource.h
 	$(WINDRES) -O coff -o $@ swaysweeper.rc
 
-wintest.exe: wintest.c
+wintest.exe: wintest.c resource.h
 	$(CC) $(CFLAGS) $(WINDEFS) -municode -o $@ wintest.c -lgdi32 -luser32 $(LDFLAGS)
 
 # Compile-only check on Linux: zig ships the mingw-w64 headers and an .rc compiler.

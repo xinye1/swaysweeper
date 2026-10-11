@@ -8,6 +8,8 @@
 #include <string.h>
 #include <wchar.h>
 
+#include "resource.h"
+
 #define PRINT_FLAGS PW_CLIENTONLY       /* Task 1's answer; PW_RENDERFULLCONTENT (2) if not */
 
 static int failures;
@@ -383,6 +385,42 @@ int wmain(int argc, wchar_t **argv)
               "a restore after Run: Maximized comes back unmaximised");
         close_app(w, app);
     }
+
+    /* Fastest Mine Sweepers shows a 32-character name whole, ampersand and all. */
+    write_state(L"best.ini", "beginner=7,Christopher Robinson-Smith & Co.\n");
+    app = launch(&pid);
+    w = app ? wait_window(pid) : NULL;
+    HWND dlg = NULL;
+    if (w) {
+        PostMessageW(w, WM_COMMAND, ID_BEST, 0);
+        for (int i = 0; i < 50 && !dlg; i++) {
+            Sleep(100);
+            dlg = FindWindowW(L"#32770", L"Fastest Mine Sweepers");
+        }
+    }
+    check(dlg != NULL, "opens Fastest Mine Sweepers");
+    if (dlg) {
+        HWND name = GetDlgItem(dlg, IDC_NAME0);
+        wchar_t text[64] = L"";
+        GetWindowTextW(name, text, 64);
+        RECT box;
+        GetClientRect(name, &box);
+        HDC dc = GetDC(name);
+        HGDIOBJ old = SelectObject(dc, (HFONT)SendMessageW(name, WM_GETFONT, 0, 0));
+        SIZE ext = {0, 0};
+        GetTextExtentPoint32W(dc, text, (int)wcslen(text), &ext);
+        SelectObject(dc, old);
+        ReleaseDC(name, dc);
+        printf("# best name \"%ls\": %ld px in a %ld px box\n", text, ext.cx, box.right);
+        check(wcscmp(text, L"Christopher Robinson-Smith & Co.") == 0, "the best name is read back");
+        check((GetWindowLongW(name, GWL_STYLE) & SS_NOPREFIX) != 0,
+              "the best name shows its & (no accelerator prefix)");
+        check(ext.cx <= box.right, "a 32-character best name fits its box");
+        PostMessageW(dlg, WM_COMMAND, IDOK, 0);
+        Sleep(300);
+    }
+    if (w)
+        close_app(w, app);
 
     printf("%d failure(s)\n", failures);
     return failures != 0;
