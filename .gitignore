@@ -1,2 +1,8 @@
 __pycache__/
 *.pyc
+win/replay
+win/test_core
+win/*.exe
+win/*.o
+win/*.pdb
+win/captures/

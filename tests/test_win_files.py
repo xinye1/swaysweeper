@@ -1,9 +1,12 @@
 """Files the Windows build takes from the Python package stay in step with it."""
 
 import importlib.util
+import re
 import struct
 import unittest
 from pathlib import Path
+
+from swaysweeper import __version__
 
 ROOT = Path(__file__).resolve().parent.parent
 REGENERATE = "stale: run /usr/bin/python3 tools/gen_c_sprites.py"
@@ -38,6 +41,13 @@ class Generated(unittest.TestCase):
             self.assertEqual(image[0][0][3], 0)
         big = images[-1]                       # 48 px: the 24 px canvas doubled
         self.assertEqual(big[24][24], (0xff, 0xff, 0x00, 255))
+
+    def test_c_version_matches_python(self):
+        text = (ROOT / "win" / "core.h").read_text()
+        self.assertIn(f'#define SWAYSWEEPER_VERSION "{__version__}"', text)
+        major, minor, patch, beta = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)-beta\.(\d+)",
+                                                 __version__).groups()
+        self.assertIn(f"#define SWAYSWEEPER_VERSION_NUM {major},{minor},{patch},{beta}", text)
 
 
 if __name__ == "__main__":
