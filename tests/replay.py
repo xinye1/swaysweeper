@@ -6,6 +6,10 @@ files. The commands are documented at the top of win/replay.c.
 
 from pathlib import Path
 
+import cairo
+
+from swaysweeper import colours, render
+from swaysweeper import geometry as G
 from swaysweeper.board import Board
 from swaysweeper.game import Game
 from swaysweeper.session import Session
@@ -40,6 +44,7 @@ class Replay:
         self.settings = {"marks": True, "color": True, "sound": False}
         self.best = {level: [999, "Anonymous"] for level in LEVELS}
         self.session = Session(None, self.settings, self.best)
+        self.cache = render.CellCache()
 
     def run(self, line):
         """One script line in, the lines it prints out."""
@@ -72,6 +77,9 @@ class Replay:
             return []
         if cmd == "dump":
             return self._dump()
+        if cmd == "render":
+            self._render(args[0])
+            return []
         raise ValueError(f"unknown command {cmd!r}")
 
     def _dump(self):
@@ -89,3 +97,20 @@ class Replay:
             "exploded=" + _points(b.exploded),
             "pressed=" + _points(pressed),
         ]
+
+    def _render(self, name):
+        g = self.session.game
+        lay = G.layout(g.board.width, g.board.height)
+        surf = cairo.ImageSurface(cairo.FORMAT_RGB24, lay.width, lay.height)
+        face, pressed, cursor = self.session.paint_state()
+        palette = colours.WIN95 if self.settings["color"] else colours.MONO
+        render.draw(cairo.Context(surf), g, palette, pressed=pressed, face=face, cursor=cursor,
+                    cache=self.cache)
+        surf.flush()
+        if surf.get_stride() != 4 * lay.width:
+            raise ValueError("unexpected Cairo stride")
+        data = bytes(surf.get_data())      # little-endian RGB24: B, G, R, unused
+        rgb = bytearray(lay.width * lay.height * 3)
+        rgb[0::3], rgb[1::3], rgb[2::3] = data[2::4], data[1::4], data[0::4]
+        (self.outdir / name).write_bytes(f"P6\n{lay.width} {lay.height}\n255\n".encode()
+                                         + bytes(rgb))

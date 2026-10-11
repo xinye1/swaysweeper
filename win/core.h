@@ -142,5 +142,12 @@ void session_tick(Session *s, Effects *fx);
 void session_new(Session *s, const Game *game, Effects *fx);
 const char *sound_name(SoundName name);
 
+/* --- render.py -------------------------------------------------------------- */
+
+/* The game area at x1 as 0x00RRGGBB, `stride` pixels per row, in Color on
+ * (Windows 95) or Color off (monochrome) per s->settings->color. */
+void render_session(const Session *s, uint32_t *pixels, int stride);
+const char *core_keys_text(void);   /* the Keys dialog text, from session.KEYS */
+
 #endif /* RC_INVOKED */
 #endif

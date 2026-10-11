@@ -1,6 +1,8 @@
 /* See core.h. Each section names the Python module it ports; keep them in
  * step, and tests/test_win_parity.py will say when they aren't. */
 #include "core.h"
+#include "sprites.h"
+#include <stdio.h>
 
 #include <string.h>
 
@@ -627,4 +629,141 @@ void session_new(Session *s, const Game *game, Effects *fx)
     s->gestures.mode = MODE_NONE;
     push(fx, FX_DELETE, 0, 0);
     push(fx, FX_REDRAW, 0, 0);
+}
+
+/* --- render.py -------------------------------------------------------------- */
+
+const char *core_keys_text(void)
+{
+    return KEYS_TEXT;
+}
+
+typedef struct {
+    uint32_t *px;
+    int stride, w, h;
+    const uint32_t *palette;
+} Canvas;
+
+/* Cairo's rectangle + fill with antialiasing off, clipped to the canvas. */
+static void fill(Canvas *c, int slot, int x, int y, int w, int h)
+{
+    if (w < 0) {
+        x += w;
+        w = -w;
+    }
+    if (h < 0) {
+        y += h;
+        h = -h;
+    }
+    int x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y;
+    int x1 = x + w > c->w ? c->w : x + w, y1 = y + h > c->h ? c->h : y + h;
+    for (int yy = y0; yy < y1; yy++)
+        for (int xx = x0; xx < x1; xx++)
+            c->px[yy * c->stride + xx] = c->palette[slot];
+}
+
+static const int BEVEL[3][2] = {
+    {SLOT_LIGHT, SLOT_SHADOW}, {SLOT_SHADOW, SLOT_LIGHT}, {SLOT_SHADOW, SLOT_SHADOW},
+};
+
+/* `r.bevel` px lines inside r; the top-left colour wins the corners above
+ * the diagonal, as Windows draws it. */
+static void bevel(Canvas *c, Rect r)
+{
+    int first = BEVEL[r.style][0], second = BEVEL[r.style][1];
+    for (int i = 0; i < r.bevel; i++) {
+        fill(c, first, r.left, r.top + i, r.right - i - r.left + 1, 1);
+        fill(c, first, r.left + i, r.top, 1, r.bottom - i - r.top + 1);
+    }
+    for (int i = 0; i < r.bevel; i++) {
+        fill(c, second, r.left + i + 1, r.bottom - i, r.right - r.left - i, 1);
+        fill(c, second, r.right - i, r.top + i + 1, 1, r.bottom - r.top - i);
+    }
+}
+
+static void paint(Canvas *c, int sprite, int x, int y)
+{
+    const Sprite *s = &SPRITES[sprite];
+    for (int dy = 0; dy < s->h; dy++)
+        for (int dx = 0; dx < s->w; dx++) {
+            int slot = LEGEND[(unsigned char)s->px[dy * s->w + dx] & 0x7f];
+            if (slot)
+                fill(c, slot - 1, x + dx, y + dy, 1, 1);
+        }
+}
+
+static void draw_cell(Canvas *c, CellFace f, int x, int y)
+{
+    if (f == CF_COVERED || f == CF_FLAG || f == CF_QUESTION) {
+        fill(c, SLOT_FACE, x, y, 16, 16);
+        bevel(c, rect(x, y, x + 15, y + 15, 2, RAISED));
+        if (f == CF_FLAG)
+            paint(c, SPR_FLAG, x, y);
+        else if (f == CF_QUESTION)
+            paint(c, SPR_QUESTION, x, y);
+        return;
+    }
+    fill(c, f == CF_EXPLODED ? SLOT_EXPLODED : SLOT_REVEALED, x, y, 16, 16);
+    fill(c, SLOT_GRID, x, y, 16, 1);
+    fill(c, SLOT_GRID, x, y, 1, 16);
+    if (f == CF_MINE || f == CF_EXPLODED || f == CF_WRONG_FLAG)
+        paint(c, SPR_MINE, x, y);
+    else if (f == CF_QUESTION_PRESSED)
+        paint(c, SPR_QUESTION, x, y);
+    else if (f >= CF_OPEN1 && f <= CF_OPEN8)
+        paint(c, SPR_OPEN1 + (f - CF_OPEN1), x, y);
+    if (f == CF_WRONG_FLAG)
+        paint(c, SPR_CROSS, x, y);
+}
+
+static void digits(Canvas *c, const int xs[3], const char *text)
+{
+    for (int i = 0; i < 3 && text[i]; i++)
+        paint(c, text[i] == '-' ? SPR_LED_MINUS : SPR_LED_0 + (text[i] - '0'), xs[i], DIGIT_Y);
+}
+
+void render_session(const Session *s, uint32_t *pixels, int stride)
+{
+    const Game *g = &s->game;
+    const Board *b = &g->board;
+    Layout lay;
+    layout_of(b->width, b->height, &lay);
+    Canvas c = {pixels, stride, lay.width, lay.height,
+                s->settings->color ? PALETTE_WIN95 : PALETTE_MONO};
+    fill(&c, SLOT_FACE, 0, 0, lay.width, lay.height);
+    const Rect frames[] = {lay.frame, lay.panel, lay.counter, lay.timer, lay.smiley, lay.board};
+    for (size_t i = 0; i < sizeof frames / sizeof frames[0]; i++)
+        bevel(&c, frames[i]);
+
+    char text[16];
+    int n = game_counter(g);
+    if (n < 0)
+        snprintf(text, sizeof text, "-%02d", -n);
+    else
+        snprintf(text, sizeof text, "%03d", n);
+    digits(&c, lay.counter_x, text);
+    snprintf(text, sizeof text, "%03d", g->seconds);
+    digits(&c, lay.timer_x, text);
+    State status = game_status(g);
+    paint(&c, SPR_FACE_NORMAL + gestures_face(&s->gestures, status), lay.face_x, FACE_Y);
+
+    for (int y = 0; y < b->height; y++)
+        for (int x = 0; x < b->width; x++) {
+            CellFace f = board_cell_face(b, x, y);
+            if (gestures_pressed(&s->gestures, x, y)) {
+                if (f == CF_COVERED)
+                    f = CF_OPEN0;
+                else if (f == CF_QUESTION)
+                    f = CF_QUESTION_PRESSED;
+            }
+            draw_cell(&c, f, BOARD_X + CELL * x, BOARD_Y + CELL * y);
+        }
+
+    if (s->has_cursor) {
+        int x = BOARD_X + CELL * s->cursor_x, y = BOARD_Y + CELL * s->cursor_y;
+        fill(&c, SLOT_CURSOR, x, y, 16, 1);
+        fill(&c, SLOT_CURSOR, x, y + 15, 16, 1);
+        fill(&c, SLOT_CURSOR, x, y, 1, 16);
+        fill(&c, SLOT_CURSOR, x + 15, y, 1, 16);
+    }
 }

@@ -237,5 +237,44 @@ class RandomWalk(Parity):
         self.check(random_walk(seed=1, sessions=60, steps=50))
 
 
+class Pixels(Parity):
+    def test_a_game_in_both_colour_sets(self):
+        px, py = centre(3, 3)
+        self.check([WALLED, "render a.ppm", *click(0, 0), "render b.ppm",
+                    f"press 1 {px} {py} 0 -", "render c.ppm", f"release 1 {px} {py} 1",
+                    "key Left", "render d.ppm", *click(5, 4, 3), *click(6, 4, 3), *click(6, 4, 3),
+                    "render e.ppm", "settings color=0", "render f.ppm", "settings color=1",
+                    *click(4, 0), "render g.ppm", "settings color=0", "render h.ppm"])
+
+    def test_every_cell_face(self):
+        cells = [(1, 1), (8, 8), (6, 0), (7, 0), (8, 0), (6, 1), (7, 1), (8, 1), (6, 2), (7, 2)]
+        qx, qy = centre(3, 5)
+        cx, cy = centre(0, 0)
+        self.check(["new 9 9 beginner " + mines(cells), *click(0, 0), *click(3, 5, 3),
+                    *click(3, 5, 3), f"press 1 {qx} {qy} 0 -", "render pressed-question.ppm",
+                    "release 1 -20 -20 1", *click(0, 1, 3),
+                    f"press 2 {cx} {cy} 0 -", "render chord-held.ppm",
+                    f"release 2 {cx} {cy} 2", "render lost.ppm"])
+
+    def test_a_win_and_the_pressed_face(self):
+        fx, fy = FACE
+        self.check(["new 9 9 beginner 8,8", *click(0, 0), "render won.ppm",
+                    f"press 1 {fx} {fy} 0 -", "render face-pressed.ppm"])
+
+    def test_largest_board(self):
+        cells = [(x, y) for y in range(24) for x in range(30)]
+        self.check(["new 30 24 custom " + mines(cells[53:]), *click(0, 0), "render big.ppm",
+                    *["tick"] * 120, "render big-120.ppm"])
+
+    def test_negative_counter(self):
+        top = [(x, y) for y in range(4) for x in range(30)][:99]
+        flags = [line for y in range(5, 12) for x in range(30) for line in click(x, y, 3)]
+        self.check(["new 30 16 expert " + mines(top), "render c99.ppm", *flags[:2 * 104],
+                    "render c-5.ppm", *flags[2 * 104:], "render c-99.ppm"])
+
+    def test_random_walk_pixels(self):
+        self.check(random_walk(seed=2, sessions=30, steps=30, render_every=10))
+
+
 if __name__ == "__main__":
     unittest.main()

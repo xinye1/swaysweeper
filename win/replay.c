@@ -158,6 +158,36 @@ static void cmd_settings(void)
     }
 }
 
+static const char *outdir;
+
+static FILE *open_out(const char *name)
+{
+    char path[4096];
+    snprintf(path, sizeof path, "%s/%s", outdir, name);
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        perror(path);
+        exit(1);
+    }
+    return f;
+}
+
+static void cmd_render(const char *name)
+{
+    static uint32_t px[AREA_MAX_W * AREA_MAX_H];
+    Layout lay;
+    layout_of(session.game.board.width, session.game.board.height, &lay);
+    render_session(&session, px, lay.width);
+    FILE *f = open_out(name);
+    fprintf(f, "P6\n%d %d\n255\n", lay.width, lay.height);
+    for (int i = 0; i < lay.width * lay.height; i++) {
+        unsigned char rgb[3] = {(unsigned char)(px[i] >> 16), (unsigned char)(px[i] >> 8),
+                                (unsigned char)px[i]};
+        fwrite(rgb, 1, 3, f);
+    }
+    fclose(f);
+}
+
 int main(int argc, char **argv)
 {
 #ifdef _WIN32
@@ -167,7 +197,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "usage: replay <output-dir>\n");
         return 2;
     }
-    (void)argv;                 /* the output directory: render and wav (Tasks 5-6) */
+    outdir = argv[1];
     settings.level = BEGINNER;
     settings.custom[0] = 9;
     settings.custom[1] = 9;
@@ -208,6 +238,8 @@ int main(int argc, char **argv)
                 cmd_settings();
             else if (strcmp(cmd, "dump") == 0)
                 cmd_dump();
+            else if (strcmp(cmd, "render") == 0)
+                cmd_render(arg());
             else {
                 fprintf(stderr, "replay: unknown command %s\n", cmd);
                 return 1;
