@@ -98,12 +98,17 @@ static char mark_at(const char *text, int x, int y)
     return p ? p[x] : 0;
 }
 
-static HANDLE launch(DWORD *pid)
+/* `show` as a shortcut's "Run:" setting passes it; 0 for the default. */
+static HANDLE launch_as(DWORD *pid, WORD show)
 {
     STARTUPINFOW si;
     PROCESS_INFORMATION pi;
     memset(&si, 0, sizeof si);
     si.cb = sizeof si;
+    if (show) {
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = show;
+    }
     wchar_t cmd[MAX_PATH + 3];
     wcscpy(cmd, L"\"");
     wcscat(cmd, g_exe);
@@ -113,6 +118,11 @@ static HANDLE launch(DWORD *pid)
     CloseHandle(pi.hThread);
     *pid = pi.dwProcessId;
     return pi.hProcess;
+}
+
+static HANDLE launch(DWORD *pid)
+{
+    return launch_as(pid, 0);
 }
 
 typedef struct { DWORD pid; HWND found; } Find;
@@ -352,6 +362,25 @@ int wmain(int argc, wchar_t **argv)
         check(shoot(w, scale, &s, "04-fresh"), "captures the fresh game");
         check(at(&s, 61, 120) == 0xFFFFFF, "(3,4) is covered on the fresh board");
         done(&s);
+        close_app(w, app);
+    }
+
+    /* A shortcut set to "Run: Maximized" still gets the fixed-size window, and a
+     * minimise and restore brings it back unmaximised (else the clock froze). */
+    app = launch_as(&pid, SW_SHOWMAXIMIZED);
+    w = app ? wait_window(pid) : NULL;
+    check(w != NULL, "launches with Run: Maximized");
+    if (w) {
+        GetClientRect(w, &r);
+        check(!IsZoomed(w) && r.right == 168 * scale && r.bottom == 211 * scale,
+              "Run: Maximized still shows the Beginner area");
+        PostMessageW(w, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+        Sleep(500);
+        ShowWindow(w, SW_RESTORE);
+        Sleep(500);
+        GetClientRect(w, &r);
+        check(!IsIconic(w) && !IsZoomed(w) && r.right == 168 * scale,
+              "a restore after Run: Maximized comes back unmaximised");
         close_app(w, app);
     }
 
