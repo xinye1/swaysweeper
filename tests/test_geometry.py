@@ -1,7 +1,8 @@
 import unittest
 
 from swaysweeper.geometry import (
-    BOARD_X, BOARD_Y, CELL, Rect, cell_at, game_size, layout, on_face, zoom_fits,
+    BOARD_X, BOARD_Y, CELL, ZOOMS, Rect, cell_at, fitting_zooms, game_size, layout, on_face,
+    shown_zoom, zoom_fits, zoom_step,
 )
 
 PRESETS = [(9, 9), (16, 16), (30, 16)]
@@ -62,6 +63,27 @@ class Geometry(unittest.TestCase):
         self.assertTrue(zoom_fits(30, 24, 2, 1920, 998))     # 451*2 + 96 = 998
         self.assertFalse(zoom_fits(30, 24, 2, 1920, 997))
         self.assertFalse(zoom_fits(30, 16, 2, 1000, 1080))
+
+    def test_zoom_levels(self):
+        self.assertEqual(ZOOMS, (1, 1.25, 1.5, 1.75, 2, 2.5, 3))
+
+    def test_fitting_zooms(self):
+        self.assertEqual(fitting_zooms(30, 16, 1920, 1080), ZOOMS)        # 323*3 + 96 = 1065
+        self.assertEqual(fitting_zooms(30, 24, 1920, 1080), (1, 1.25, 1.5, 1.75, 2))
+        self.assertEqual(fitting_zooms(30, 24, 100, 100), (1,))          # 100 % always
+
+    def test_shown_zoom_is_the_largest_that_fits_up_to_the_choice(self):
+        self.assertEqual(shown_zoom(30, 24, 3, 1920, 1080), 2)
+        self.assertEqual(shown_zoom(30, 24, 1.5, 1920, 1080), 1.5)
+        self.assertEqual(shown_zoom(30, 24, 2, 1000, 800), 1.5)           # 451*1.75 + 96 > 800
+        self.assertEqual(shown_zoom(30, 24, 2, 100, 100), 1)
+
+    def test_zoom_step_moves_one_fitting_level_and_stops_at_the_ends(self):
+        levels = (1, 1.25, 1.5)
+        self.assertEqual(zoom_step(levels, 1.25, 1), 1.5)
+        self.assertEqual(zoom_step(levels, 1.5, 1), 1.5)
+        self.assertEqual(zoom_step(levels, 1.25, -1), 1)
+        self.assertEqual(zoom_step(levels, 1, -1), 1)
 
 
 if __name__ == "__main__":

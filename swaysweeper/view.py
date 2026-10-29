@@ -40,14 +40,14 @@ class BoardView(Gtk.DrawingArea):
 
     def _origin(self):
         lay, z = self._layout(), self.app.zoom
-        ox = max(0, (self.get_width() - lay.width * z) // 2)
-        oy = max(0, (self.get_height() - lay.height * z) // 2)
+        ox = max(0, (self.get_width() - round(lay.width * z)) // 2)
+        oy = max(0, (self.get_height() - round(lay.height * z)) // 2)
         return ox, oy, z, lay
 
     def resize(self):
         lay, z = self._layout(), self.app.zoom
-        self.set_content_width(lay.width * z)
-        self.set_content_height(lay.height * z)
+        self.set_content_width(round(lay.width * z))
+        self.set_content_height(round(lay.height * z))
         self.queue_draw()
 
     def _surface_to_widget(self, sx, sy):

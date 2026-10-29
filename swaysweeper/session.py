@@ -34,6 +34,8 @@ Keyboard
   f                      flag, then ?, then clear
   c                      open around a number
   F2                     new game
+  Ctrl+= and Ctrl+-      zoom in and out
+  Ctrl+0                 zoom 100%
   ?                      this list
   Ctrl+Q                 exit"""
 
