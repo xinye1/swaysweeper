@@ -210,8 +210,10 @@ The process is PerMonitorV2 DPI-aware (manifest), so Windows never bitmap-stretc
 - Zoom is on top of the display's scaling: `scale = dpi × zoom% / 9600` device pixels per game
   pixel, so 100% at 150 % DPI is ×1.5, as other apps are drawn. Lengths round to whole pixels.
 - The levels are the core's `ZOOMS`: 100, 125, 150, 175, 200, 250 and 300 %. At 96, 120, 144 and
-  168 DPI every cell is a whole number of pixels, so StretchDIBits' nearest-neighbour stretch
-  draws every cell alike.
+  168 DPI every cell is a whole number of pixels. The core's `scale_nearest` stretches by the
+  exact scale, which `to_game()` inverts, so every cell is drawn alike; GDI only copies. (A
+  StretchDIBits stretch goes by the rounded sizes' ratio and draws one cell a pixel bigger at
+  120 and 168 DPI.)
 - The chosen level shows if it fits the work area; otherwise the largest level that fits. If
   even 100% doesn't fit, the largest whole-pixel scale that fits, minimum ×1.
 

@@ -142,6 +142,47 @@ static void test_settings_every_zoom_level(void)
     CHECK(zoom_index(130) == -1);
 }
 
+/* At every zoom on 100-175% displays, each 16 px square stretches to the same
+ * whole number of pixels, and the frame's last row and column still show. */
+static void test_scale_nearest_draws_every_square_alike(void)
+{
+    static const int dpis[] = {96, 120, 144, 168};
+    static const int sizes[][2] = {{9, 9}, {30, 16}, {30, 24}};
+    static uint32_t src[AREA_MAX_W * AREA_MAX_H], dst[3200 * 3200];
+    for (int d = 0; d < 4; d++)
+        for (int z = 0; z < N_ZOOMS; z++)
+            for (int b = 0; b < 3; b++) {
+                int scale = dpis[d] * ZOOMS[z], sw = 24 + 16 * sizes[b][0];
+                int sh = 67 + 16 * sizes[b][1];
+                int dw = (sw * scale + 4800) / 9600, dh = (sh * scale + 4800) / 9600;
+                for (int y = 0; y < sh; y++)
+                    for (int x = 0; x < sw; x++)
+                        src[y * sw + x] = (uint32_t)(y << 16 | x);
+                scale_nearest(src, sw, sh, dst, dw, dh, scale);
+                int cell = 16 * scale / 9600, ok = 1;
+                for (int c = 0; c < sizes[b][0]; c++) {
+                    int n = 0;
+                    for (int x = 0; x < dw; x++)
+                        n += (int)(dst[x] & 0xFFFF) >= 12 + 16 * c
+                             && (int)(dst[x] & 0xFFFF) < 28 + 16 * c;
+                    ok &= n == cell;
+                }
+                for (int c = 0; c < sizes[b][1]; c++) {
+                    int n = 0;
+                    for (int y = 0; y < dh; y++) {
+                        int v = (int)(dst[y * dw] >> 16);
+                        n += v >= 55 + 16 * c && v < 71 + 16 * c;
+                    }
+                    ok &= n == cell;
+                }
+                ok &= dst[0] == 0 && dst[dh * dw - 1] == (uint32_t)((sh - 1) << 16 | (sw - 1));
+                if (!ok)
+                    printf("uneven at %d dpi, %d%%, %dx%d\n", dpis[d], ZOOMS[z], sizes[b][0],
+                           sizes[b][1]);
+                CHECK(ok);
+            }
+}
+
 static void test_best_round_trip_and_names(void)
 {
     Best b[3], c[3];
@@ -243,6 +284,7 @@ int main(void)
     test_settings_tolerate_spaces_around_values();
     test_settings_rules();
     test_settings_every_zoom_level();
+    test_scale_nearest_draws_every_square_alike();
     test_best_round_trip_and_names();
     test_game_round_trip();
     test_game_rejects();

@@ -215,7 +215,7 @@ static int fits(int scale, UINT dpi, const RECT *work)
  * fits again. */
 static int wanted_scale(UINT dpi)
 {
-    int want = zoom_index(g_settings.zoom);
+    int want = zoom_index(g_settings.zoom);     /* >= 0: settings_parse admits only levels */
     return (int)dpi * ZOOMS[want < g_fit ? want : g_fit];
 }
 
@@ -284,22 +284,40 @@ static void apply_size(void)
 
 /* --- paint (spec §3.1) ------------------------------------------------------- */
 
+/* The core stretches, by the scale to_game() inverts; GDI copies 1:1. If the
+ * stretched buffer can't be had, GDI stretches, a pixel out at some sizes. */
 static void blit(HDC dc)
 {
+    static uint32_t *scaled;
+    static size_t cap;
     int w, h;
     area_size(&w, &h);
     render_session(&g_session, g_pixels, w);
+    int dw = dev(w, g_scale), dh = dev(h, g_scale);
+    size_t need = (size_t)dw * (size_t)dh;
+    if (need > cap) {
+        free(scaled);
+        scaled = malloc(need * sizeof *scaled);
+        cap = scaled ? need : 0;
+    }
     BITMAPINFO bi;
     memset(&bi, 0, sizeof bi);
     bi.bmiHeader.biSize = sizeof bi.bmiHeader;
-    bi.bmiHeader.biWidth = w;
-    bi.bmiHeader.biHeight = -h;                  /* top-down */
     bi.bmiHeader.biPlanes = 1;
     bi.bmiHeader.biBitCount = 32;
     bi.bmiHeader.biCompression = BI_RGB;
-    SetStretchBltMode(dc, COLORONCOLOR);
-    StretchDIBits(dc, 0, 0, dev(w, g_scale), dev(h, g_scale), 0, 0, w, h, g_pixels, &bi,
-                  DIB_RGB_COLORS, SRCCOPY);
+    if (scaled) {
+        scale_nearest(g_pixels, w, h, scaled, dw, dh, g_scale);
+        bi.bmiHeader.biWidth = dw;
+        bi.bmiHeader.biHeight = -dh;             /* top-down */
+        SetDIBitsToDevice(dc, 0, 0, (DWORD)dw, (DWORD)dh, 0, 0, 0, (UINT)dh, scaled, &bi,
+                          DIB_RGB_COLORS);
+    } else {
+        bi.bmiHeader.biWidth = w;
+        bi.bmiHeader.biHeight = -h;
+        SetStretchBltMode(dc, COLORONCOLOR);
+        StretchDIBits(dc, 0, 0, dw, dh, 0, 0, w, h, g_pixels, &bi, DIB_RGB_COLORS, SRCCOPY);
+    }
 }
 
 /* --- timer, sound, effects --------------------------------------------------- */

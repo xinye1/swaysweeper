@@ -1308,3 +1308,17 @@ void game_new(Game *g, Level level, const int custom[3], uint64_t *rng)
     board_init(&b, d[0], d[1], (const int (*)[2])mines, d[2]);
     game_init(g, level, &b);
 }
+
+void scale_nearest(const uint32_t *src, int sw, int sh, uint32_t *dst, int dw, int dh, int scale)
+{
+    /* By the exact scale, not dw / sw: the sizes are rounded, and a rounded
+     * ratio would draw one square a pixel bigger than the rest. */
+    for (int y = 0; y < dh; y++) {
+        int sy = y * 9600 / scale;
+        const uint32_t *row = src + (sy < sh ? sy : sh - 1) * sw;
+        for (int x = 0; x < dw; x++) {
+            int sx = x * 9600 / scale;
+            dst[y * dw + x] = row[sx < sw ? sx : sw - 1];
+        }
+    }
+}

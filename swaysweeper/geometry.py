@@ -94,11 +94,6 @@ def fitting_zooms(w, h, mon_w, mon_h):
     return (1,) + tuple(z for z in ZOOMS[1:] if zoom_fits(w, h, z, mon_w, mon_h))
 
 
-def shown_zoom(w, h, want, mon_w, mon_h):
-    """The largest level up to `want` that fits the monitor."""
-    return max(z for z in fitting_zooms(w, h, mon_w, mon_h) if z <= want)
-
-
 def zoom_step(levels, shown, step):
     """Zoom In (+1) or Out (-1) from `shown`, within `levels`."""
     i = max(0, min(len(levels) - 1, levels.index(shown) + step))

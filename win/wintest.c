@@ -443,7 +443,7 @@ int wmain(int argc, wchar_t **argv)
          * isn't a whole number of pixels. */
         if (shoot(w, scale * 5 / 4, &s, "06-zoom125")) {
             int x = mid(12 + 16 * 2 + 8, s.scale), tops[16], n = 0, even = 1;
-            for (int y = 1; y < s.h && n < 16; y++)
+            for (int y = mid(55, s.scale); y < mid(55 + 16 * 9, s.scale) && n < 16; y++)
                 if ((s.px[y * s.w + x] & 0xFFFFFF) == 0xFFFFFF
                     && (s.px[(y - 1) * s.w + x] & 0xFFFFFF) != 0xFFFFFF)
                     tops[n++] = y;

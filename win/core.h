@@ -147,6 +147,9 @@ const char *sound_name(SoundName name);
 /* The game area at x1 as 0x00RRGGBB, `stride` pixels per row, in Color on
  * (Windows 95) or Color off (monochrome) per s->settings->color. */
 void render_session(const Session *s, uint32_t *pixels, int stride);
+/* Nearest-neighbour stretch of the sw x sh game area to dw x dh device pixels at
+ * scale (device px per game px x 9600); win/main.c's to_game() inverts it. */
+void scale_nearest(const uint32_t *src, int sw, int sh, uint32_t *dst, int dw, int dh, int scale);
 const char *core_keys_text(void);   /* the Keys dialog text, from session.KEYS */
 
 /* --- sound.py: the three sounds as WAV files, byte for byte ----------------- */

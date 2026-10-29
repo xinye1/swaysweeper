@@ -44,7 +44,7 @@ class App(Gtk.Application):
         self.session = Session(game, self.settings, best)
         self.window = None
         self.view = None
-        self._zoom, self._levels = 1, (1,)
+        self._zoom, self._levels = 1, ()
         self._zoom_levels = Gio.Menu()
         self._timer = 0
         self._css = None
