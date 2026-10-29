@@ -41,7 +41,7 @@ typedef struct {
 typedef struct {
     Level level;
     int custom[3];                  /* width, height, mines */
-    int marks, color, sound, zoom;  /* zoom is 1 or 2 */
+    int marks, color, sound, zoom;  /* zoom in percent, one of ZOOMS */
     int has_pos, x, y;              /* window position (Windows only) */
 } Settings;
 
@@ -157,6 +157,11 @@ size_t wav_build(SoundName name, unsigned char *out, size_t cap);
 /* --- store.py's rules, in Windows' INI files (spec §3.5) --------------------- */
 /* Parsers start from the defaults and return 0, or -1 for a file to move
  * aside. Formatters return the length written, or 0 if `cap` is too small. */
+
+/* Game > Zoom's levels in percent; swaysweeper/geometry.py's ZOOMS as factors. */
+enum { N_ZOOMS = 7 };
+extern const int ZOOMS[N_ZOOMS];
+int zoom_index(int percent);                    /* -1 if not a level */
 
 void settings_default(Settings *s);
 int settings_parse(const char *text, Settings *out);

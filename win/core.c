@@ -928,6 +928,17 @@ typedef struct { char *buf; size_t cap, len; int ok; } Out;
 
 static void outf(Out *o, const char *fmt, ...);
 
+const int ZOOMS[N_ZOOMS] = {100, 125, 150, 175, 200, 250, 300};
+static const char *const ZOOM_NAMES[N_ZOOMS] = {"1", "1.25", "1.5", "1.75", "2", "2.5", "3"};
+
+int zoom_index(int percent)
+{
+    for (int i = 0; i < N_ZOOMS; i++)
+        if (ZOOMS[i] == percent)
+            return i;
+    return -1;
+}
+
 void settings_default(Settings *s)
 {
     memset(s, 0, sizeof *s);
@@ -936,7 +947,7 @@ void settings_default(Settings *s)
     s->custom[1] = 9;
     s->custom[2] = 10;
     s->marks = s->color = 1;
-    s->zoom = 1;
+    s->zoom = 100;
 }
 
 typedef struct { Settings s; int seen_x, seen_y; } SettingsIni;
@@ -961,10 +972,12 @@ static int settings_line(char *key, char *value, void *ctx)
     if (strcmp(key, "sound") == 0)
         return parse_flag(value, &s->sound);
     if (strcmp(key, "zoom") == 0) {
-        if (!parse_int(value, &v[0]) || (v[0] != 1 && v[0] != 2))
-            return -1;
-        s->zoom = v[0];
-        return 0;
+        for (int i = 0; i < N_ZOOMS; i++)
+            if (strcmp(value, ZOOM_NAMES[i]) == 0) {
+                s->zoom = ZOOMS[i];
+                return 0;
+            }
+        return -1;
     }
     if (strcmp(key, "x") == 0 || strcmp(key, "y") == 0) {
         if (!parse_int(value, &v[0]))
@@ -996,9 +1009,10 @@ int settings_parse(const char *text, Settings *out)
 size_t settings_format(const Settings *s, char *buf, size_t cap)
 {
     Out o = {buf, cap, 0, 1};
-    outf(&o, "difficulty=%s\ncustom=%d,%d,%d\nmarks=%d\ncolor=%d\nsound=%d\nzoom=%d\n",
+    int z = zoom_index(s->zoom);
+    outf(&o, "difficulty=%s\ncustom=%d,%d,%d\nmarks=%d\ncolor=%d\nsound=%d\nzoom=%s\n",
          level_name(s->level), s->custom[0], s->custom[1], s->custom[2], s->marks != 0,
-         s->color != 0, s->sound != 0, s->zoom);
+         s->color != 0, s->sound != 0, ZOOM_NAMES[z < 0 ? 0 : z]);
     if (s->has_pos)
         outf(&o, "x=%d\ny=%d\n", s->x, s->y);
     return o.ok ? o.len : 0;
