@@ -438,6 +438,24 @@ int wmain(int argc, wchar_t **argv)
               "Zoom Out twice steps to 125%");
         check(GetMenuState(menu, ID_ZOOM_100 + 1, MF_BYCOMMAND) & MF_CHECKED,
               "Game > Zoom > 125% is checked");
+        /* Every square alike: down column 2 (all covered), each square's white
+         * top edge starts 16 x 1.25 = 20 px below the last, though 211 x 1.25
+         * isn't a whole number of pixels. */
+        if (shoot(w, scale * 5 / 4, &s, "06-zoom125")) {
+            int x = mid(12 + 16 * 2 + 8, s.scale), tops[16], n = 0, even = 1;
+            for (int y = 1; y < s.h && n < 16; y++)
+                if ((s.px[y * s.w + x] & 0xFFFFFF) == 0xFFFFFF
+                    && (s.px[(y - 1) * s.w + x] & 0xFFFFFF) != 0xFFFFFF)
+                    tops[n++] = y;
+            printf("# 125%% square tops:");
+            for (int i = 0; i < n; i++)
+                printf(" %d", tops[i]);
+            printf("\n");
+            for (int i = 1; i < n; i++)
+                even &= tops[i] - tops[i - 1] == dev(16, s.scale);
+            check(n == 9 && even, "at 125% every row of squares is 20 px tall");
+            done(&s);
+        }
         close_app(w, app);
         read_state(L"settings.ini", ini, sizeof ini);
         check(strstr(ini, "\nzoom=1.25\n") != NULL, "settings.ini keeps zoom=1.25");
