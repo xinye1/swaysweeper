@@ -25,7 +25,7 @@ which shares 2000's rules), cited as `file.c:line`. The one deliberate deviation
   one template that `theme` renders.
 - Faithful rules plus small extras: keyboard play, zoom, resume of a game in progress.
 - Name: **swaysweeper**.
-- Review decisions: fix the 95/98 one-click timer bug; clamp the counter at −99; Zoom ×1/×2 only.
+- Review decisions: fix the 95/98 one-click timer bug; clamp the counter at −99; Zoom ×1/×2 only (superseded 2026-10-29: levels from 100% to 300%, see Zoom below).
 
 **Assumed**
 
@@ -133,15 +133,20 @@ output scale, coordinates are snapped to device pixels using `Gdk.Surface.get_sc
 **Menu bar** — `Gtk.PopoverMenuBar` from a `Gio.Menu`:
 
 - **Game:** New (F2) · Beginner · Intermediate · Expert · Custom… · Marks (?) · Color · Sound ·
-  Zoom ×2 · Best Times… · Exit
+  Zoom ▸ · Best Times… · Exit
 - **Help:** Keys… · About swaysweeper
 
 Its colours come from the slots through a CSS provider whose selectors are scoped to a class on the
 menu bar, so dialogs keep the system GTK theme. *Color* keeps winmine's meaning: unticked renders
 the built-in monochrome set.
 
-**Zoom** is ×1 (default) or ×2, and ×2 is offered only while the window at ×2 fits the monitor's
-logical work area; a difficulty change that would no longer fit drops back to ×1.
+**Zoom** (amended 2026-10-29: ×1 was too small and ×2 too big) is a submenu: Zoom In (Ctrl+=),
+Zoom Out (Ctrl+-), then the levels 100% (Ctrl+0), 125%, 150%, 175%, 200%, 250% and 300%
+(`geometry.ZOOMS`). It lists the levels whose window fits the monitor's logical work area. The game
+shows the chosen level, or the largest below it that fits; `settings.json` keeps the choice
+(`"zoom": 1.25`), so it comes back on a monitor it fits. Cells stay nearest-neighbour: a quarter
+step makes every cell a whole number of pixels (16 × 1.25 = 20), so every cell looks the same,
+though a 1 px line inside one may come out a pixel thicker than its neighbour.
 
 ## 3. Rendering and theming
 

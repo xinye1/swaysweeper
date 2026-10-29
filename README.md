@@ -9,7 +9,7 @@ colours and all. Inspired by [omasweeper](https://github.com/jankeesvw/omasweepe
   the middle button or Shift+left, on the first button released.
 - One deliberate deviation: the 95/98 one-click-win timer bug is fixed, as 2000 did.
 - Extras that stay out of the way: vim/arrow keyboard play (`?` lists the keys),
-  Zoom ×2 when it fits, and a game in progress survives closing — or a crash.
+  Game ▸ Zoom from 100% to 300% (Ctrl+= and Ctrl+-), and a game in progress survives closing — or a crash.
 
 ![A lost Intermediate game](screenshots/win95.png)
 
