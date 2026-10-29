@@ -10,10 +10,12 @@ from unittest import mock
 
 import gi
 
+gi.require_version("Gdk", "4.0")
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk  # noqa: E402
+from gi.repository import Gdk, Gtk  # noqa: E402
 
-HAVE_DISPLAY = Gtk.init_check()
+Gtk.init_check()
+HAVE_DISPLAY = Gdk.Display.get_default() is not None
 if HAVE_DISPLAY:
     from swaysweeper.app import APP_ID, App
 _ids = itertools.count()
