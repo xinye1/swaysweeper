@@ -224,8 +224,6 @@ static void update_menu(void)
     CheckMenuItem(m, ID_MARKS, MF_BYCOMMAND | (g_settings.marks ? MF_CHECKED : MF_UNCHECKED));
     CheckMenuItem(m, ID_COLOR, MF_BYCOMMAND | (g_settings.color ? MF_CHECKED : MF_UNCHECKED));
     CheckMenuItem(m, ID_SOUND, MF_BYCOMMAND | (g_settings.sound ? MF_CHECKED : MF_UNCHECKED));
-    CheckMenuItem(m, ID_ZOOM, MF_BYCOMMAND | (g_settings.zoom == 2 ? MF_CHECKED : MF_UNCHECKED));
-    EnableMenuItem(m, ID_ZOOM, MF_BYCOMMAND | (g_zoom_fits ? MF_ENABLED : MF_GRAYED));
 }
 
 static void apply_size(void)
@@ -617,7 +615,6 @@ static void command(int id)
         InvalidateRect(g_wnd, NULL, FALSE);
         break;
     case ID_SOUND: g_settings.sound = !g_settings.sound; save_settings(); update_menu(); break;
-    case ID_ZOOM: g_settings.zoom = g_settings.zoom == 2 ? 1 : 2; save_settings(); apply_size(); break;
     case ID_BEST: dialog(IDD_BEST, best_proc, 0); break;
     case ID_EXIT: DestroyWindow(g_wnd); break;
     case ID_KEYS: dialog(IDD_KEYS, keys_proc, 0); break;

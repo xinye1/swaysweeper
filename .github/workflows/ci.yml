@@ -66,3 +66,7 @@ jobs:
           name: captures
           path: win/captures/
           if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swaysweeper-windows-x86_64
+          path: win/swaysweeper.exe
