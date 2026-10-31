@@ -48,7 +48,7 @@ Download `swaysweeper-windows-x86_64.exe` from the
 [releases](https://github.com/xinye1/swaysweeper/releases) and run it. For this beta:
 
 ```powershell
-$url = "https://github.com/xinye1/swaysweeper/releases/download/v0.1.0-beta.2/swaysweeper-windows-x86_64.exe"
+$url = "https://github.com/xinye1/swaysweeper/releases/download/v0.1.0-beta.3/swaysweeper-windows-x86_64.exe"
 Invoke-WebRequest $url -OutFile swaysweeper.exe
 (Get-FileHash swaysweeper.exe -Algorithm SHA256).Hash   # compare with the .sha256 on the release
 .\swaysweeper.exe
