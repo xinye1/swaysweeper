@@ -7,8 +7,8 @@
 #ifndef SWAYSWEEPER_CORE_H
 #define SWAYSWEEPER_CORE_H
 
-#define SWAYSWEEPER_VERSION "0.1.0-beta.2"
-#define SWAYSWEEPER_VERSION_NUM 0,1,0,2
+#define SWAYSWEEPER_VERSION "0.1.0-beta.3"
+#define SWAYSWEEPER_VERSION_NUM 0,1,0,3
 
 #ifndef RC_INVOKED
 
@@ -41,7 +41,7 @@ typedef struct {
 typedef struct {
     Level level;
     int custom[3];                  /* width, height, mines */
-    int marks, color, sound, zoom;  /* zoom is 1 or 2 */
+    int marks, color, sound, zoom;  /* zoom in percent, one of ZOOMS */
     int has_pos, x, y;              /* window position (Windows only) */
 } Settings;
 
@@ -147,6 +147,9 @@ const char *sound_name(SoundName name);
 /* The game area at x1 as 0x00RRGGBB, `stride` pixels per row, in Color on
  * (Windows 95) or Color off (monochrome) per s->settings->color. */
 void render_session(const Session *s, uint32_t *pixels, int stride);
+/* Nearest-neighbour stretch of the sw x sh game area to dw x dh device pixels at
+ * scale (device px per game px x 9600); win/main.c's to_game() inverts it. */
+void scale_nearest(const uint32_t *src, int sw, int sh, uint32_t *dst, int dw, int dh, int scale);
 const char *core_keys_text(void);   /* the Keys dialog text, from session.KEYS */
 
 /* --- sound.py: the three sounds as WAV files, byte for byte ----------------- */
@@ -157,6 +160,11 @@ size_t wav_build(SoundName name, unsigned char *out, size_t cap);
 /* --- store.py's rules, in Windows' INI files (spec §3.5) --------------------- */
 /* Parsers start from the defaults and return 0, or -1 for a file to move
  * aside. Formatters return the length written, or 0 if `cap` is too small. */
+
+/* Game > Zoom's levels in percent; swaysweeper/geometry.py's ZOOMS as factors. */
+enum { N_ZOOMS = 7 };
+extern const int ZOOMS[N_ZOOMS];
+int zoom_index(int percent);                    /* -1 if not a level */
 
 void settings_default(Settings *s);
 int settings_parse(const char *text, Settings *out);

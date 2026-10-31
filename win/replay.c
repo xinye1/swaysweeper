@@ -214,7 +214,8 @@ int main(int argc, char **argv)
     settings.custom[0] = 9;
     settings.custom[1] = 9;
     settings.custom[2] = 10;
-    settings.marks = settings.color = settings.zoom = 1;
+    settings.marks = settings.color = 1;
+    settings.zoom = 100;
     for (int i = 0; i < 3; i++) {
         best[i].seconds = 999;
         strcpy(best[i].name, "Anonymous");

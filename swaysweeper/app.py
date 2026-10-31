@@ -19,6 +19,11 @@ from .view import BoardView  # noqa: E402
 APP_ID = "io.github.xinye1.swaysweeper"
 
 
+def _zoom_name(z):
+    """The app.zoom target for a level: "1", "1.25", ... "3"."""
+    return f"{z:g}"
+
+
 class App(Gtk.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID)
@@ -39,6 +44,8 @@ class App(Gtk.Application):
         self.session = Session(game, self.settings, best)
         self.window = None
         self.view = None
+        self._zoom, self._levels = 1, ()
+        self._zoom_levels = Gio.Menu()
         self._timer = 0
         self._css = None
 
@@ -50,7 +57,8 @@ class App(Gtk.Application):
 
     @property
     def zoom(self):
-        return self.settings["zoom"]
+        """The zoom shown: the chosen one, or the largest below it that fits."""
+        return self._zoom
 
     @property
     def game(self):
@@ -115,9 +123,14 @@ class App(Gtk.Application):
             ("_Intermediate", "app.difficulty::intermediate"),
             ("_Expert", "app.difficulty::expert"),
             ("_Custom…", "app.difficulty::custom")))
-        game.append_section(None, section(
-            ("_Marks (?)", "app.marks"), ("Co_lor", "app.color"),
-            ("_Sound", "app.sound"), ("_Zoom ×2", "app.zoom")))
+        options = section(("_Marks (?)", "app.marks"), ("Co_lor", "app.color"),
+                          ("_Sound", "app.sound"))
+        zoom = Gio.Menu()
+        zoom.append_section(None, section(("Zoom _In", "app.zoom-in"),
+                                          ("Zoom _Out", "app.zoom-out")))
+        zoom.append_section(None, self._zoom_levels)
+        options.append_submenu("_Zoom", zoom)
+        game.append_section(None, options)
         game.append_section(None, section(("Best _Times…", "app.best")))
         game.append_section(None, section(("E_xit", "app.quit")))
         help_ = section(("_Keys…", "app.keys"), ("_About swaysweeper", "app.about"))
@@ -133,6 +146,8 @@ class App(Gtk.Application):
             "best": lambda *_: self._show_best(),
             "keys": lambda *_: dialogs.keys_help(self.window),
             "about": lambda *_: dialogs.about(self.window),
+            "zoom-in": lambda *_: self._set_zoom(geometry.zoom_step(self._levels, self._zoom, 1)),
+            "zoom-out": lambda *_: self._set_zoom(geometry.zoom_step(self._levels, self._zoom, -1)),
         }
         for name, handler in plain.items():
             action = Gio.SimpleAction.new(name, None)
@@ -145,15 +160,24 @@ class App(Gtk.Application):
         level.connect("change-state", self._on_difficulty)
         self.add_action(level)
 
-        for name in ("marks", "color", "sound", "zoom"):
-            value = self.settings["zoom"] == 2 if name == "zoom" else self.settings[name]
-            action = Gio.SimpleAction.new_stateful(name, None, GLib.Variant("b", value))
+        for name in ("marks", "color", "sound"):
+            action = Gio.SimpleAction.new_stateful(name, None, GLib.Variant("b", self.settings[name]))
             action.connect("change-state", self._on_toggle)
             self.add_action(action)
         self.lookup_action("sound").set_enabled(self.sound.available)
 
+        zoom = Gio.SimpleAction.new_stateful("zoom", GLib.VariantType.new("s"),
+                                             GLib.Variant("s", _zoom_name(self._zoom)))
+        zoom.connect("change-state", lambda _a, value: self._set_zoom(
+            next(z for z in geometry.ZOOMS if _zoom_name(z) == value.get_string())))
+        self.add_action(zoom)
+
         self.set_accels_for_action("app.new", ["F2"])
         self.set_accels_for_action("app.quit", ["<Control>q"])
+        self.set_accels_for_action("app.zoom-in", ["<Control>equal", "<Control>plus",
+                                                   "<Control>KP_Add"])
+        self.set_accels_for_action("app.zoom-out", ["<Control>minus", "<Control>KP_Subtract"])
+        self.set_accels_for_action("app.zoom::1", ["<Control>0", "<Control>KP_0"])
 
     def _on_difficulty(self, action, value):
         level = value.get_string()
@@ -174,11 +198,7 @@ class App(Gtk.Application):
     def _on_toggle(self, action, value):
         name, on = action.get_name(), value.get_boolean()
         action.set_state(value)
-        if name == "zoom":
-            self.settings["zoom"] = 2 if on else 1
-            self._apply_size()
-        else:
-            self.settings[name] = on
+        self.settings[name] = on
         if name == "color":
             self._update_css()
             if self.view is not None:
@@ -192,19 +212,29 @@ class App(Gtk.Application):
             return self.best
         dialogs.best_times(self.window, self.best, reset)
 
+    def _set_zoom(self, zoom):
+        self.settings["zoom"] = zoom
+        self._save("settings", self.settings)
+        self._apply_size()
+
     def _apply_size(self):
+        """Show the chosen zoom, or the largest below it that fits; settings
+        keep the choice for a monitor it fits. Game ▸ Zoom lists what fits."""
         if self.view is None:
             return
-        fits = self._fits(2)
-        zoom = self.lookup_action("zoom")
-        zoom.set_enabled(fits)
-        if self.settings["zoom"] == 2 and not fits:
-            self.settings["zoom"] = 1
-            self._save("settings", self.settings)
-        zoom.set_state(GLib.Variant("b", self.settings["zoom"] == 2))
+        levels = self._fitting_zooms()
+        if levels != self._levels:
+            self._levels = levels
+            self._zoom_levels.remove_all()
+            for z in levels:
+                self._zoom_levels.append(f"{z * 100:g}%", f"app.zoom::{_zoom_name(z)}")
+        self._zoom = max(z for z in levels if z <= self.settings["zoom"])
+        self.lookup_action("zoom").set_state(GLib.Variant("s", _zoom_name(self._zoom)))
+        self.lookup_action("zoom-in").set_enabled(self._zoom < levels[-1])
+        self.lookup_action("zoom-out").set_enabled(self._zoom > 1)
         self.view.resize()
 
-    def _fits(self, zoom):
+    def _fitting_zooms(self):
         display = Gdk.Display.get_default()
         surface = self.window.get_surface() if self.window else None
         monitor = display.get_monitor_at_surface(surface) if surface else None
@@ -212,10 +242,10 @@ class App(Gtk.Application):
             monitors = display.get_monitors()
             monitor = monitors.get_item(0) if monitors.get_n_items() else None
         if monitor is None:
-            return False
+            return (1,)
         g = monitor.get_geometry()
         b = self.game.board
-        return geometry.zoom_fits(b.width, b.height, zoom, g.width, g.height)
+        return geometry.fitting_zooms(b.width, b.height, g.width, g.height)
 
     # --- play ----------------------------------------------------------------
 

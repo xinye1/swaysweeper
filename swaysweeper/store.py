@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 
 from .game import DIFFICULTIES, clamp_custom
+from .geometry import ZOOMS
 
 APP = "swaysweeper"
 
@@ -86,7 +87,7 @@ def settings_from(data):
                 raise ValueError(f"custom {value!r}")
             value = list(clamp_custom(*value))
         elif key == "zoom":
-            if value not in (1, 2) or isinstance(value, bool):
+            if value not in ZOOMS or isinstance(value, bool):
                 raise ValueError(f"zoom {value!r}")
         elif not isinstance(value, bool):
             raise ValueError(f"{key} {value!r}")

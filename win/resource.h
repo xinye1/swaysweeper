@@ -35,10 +35,12 @@
 #define ID_MARKS 1005
 #define ID_COLOR 1006
 #define ID_SOUND 1007
-#define ID_ZOOM 1008
 #define ID_BEST 1009
 #define ID_EXIT 1010
 #define ID_KEYS 1011
 #define ID_ABOUT 1012
+#define ID_ZOOM_IN 1013
+#define ID_ZOOM_OUT 1014
+#define ID_ZOOM_100 1020        /* ID_ZOOM_100 + zoom_index, through 1026 */
 
 #endif

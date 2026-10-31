@@ -154,6 +154,19 @@ static HWND wait_window(DWORD pid)
     return NULL;
 }
 
+/* A scale is device pixels per game pixel times 9600: dpi x zoom percent, as
+ * swaysweeper.exe sizes itself. dev() is a game length in device pixels. */
+static int dev(int n, int scale)
+{
+    return (n * scale + 4800) / 9600;
+}
+
+/* The device pixel at the middle of game pixel v. */
+static int mid(int v, int scale)
+{
+    return (2 * v + 1) * scale / 19200;
+}
+
 typedef struct {
     int w, h, scale;
     uint32_t *px;
@@ -221,7 +234,7 @@ static int shoot(HWND w, int scale, Shot *s, const char *name)
 
 static uint32_t at(const Shot *s, int x, int y)
 {
-    return s->px[(y * s->scale) * s->w + x * s->scale] & 0xFFFFFF;
+    return s->px[mid(y, s->scale) * s->w + mid(x, s->scale)] & 0xFFFFFF;
 }
 
 static void done(Shot *s)
@@ -231,7 +244,7 @@ static void done(Shot *s)
 
 static void click(HWND w, int scale, int cx, int cy, int right)
 {
-    int x = (12 + 16 * cx + 8) * scale, y = (55 + 16 * cy + 8) * scale;
+    int x = mid(12 + 16 * cx + 8, scale), y = mid(55 + 16 * cy + 8, scale);
     POINT p = {x, y};
     ClientToScreen(w, &p);
     SetCursorPos(p.x, p.y);                     /* so real motion lands on the same square */
@@ -290,9 +303,10 @@ int wmain(int argc, wchar_t **argv)
         return 1;
     RECT r;
     GetClientRect(w, &r);
-    int scale = r.right / 168 > 0 ? r.right / 168 : 1;
-    printf("# client %ldx%ld, scale %d, dpi %u\n", r.right, r.bottom, scale, GetDpiForWindow(w));
-    check(r.right == 168 * scale && r.bottom == 211 * scale, "client area is the Beginner area");
+    int scale = (int)GetDpiForWindow(w) * 100;
+    printf("# client %ldx%ld, dpi %u\n", r.right, r.bottom, GetDpiForWindow(w));
+    check(r.right == dev(168, scale) && r.bottom == dev(211, scale),
+          "client area is the Beginner area");
 
     /* 2. It paints the resumed game. */
     check(shoot(w, scale, &s, "01-resumed"), "PrintWindow captures the client area");
@@ -374,16 +388,77 @@ int wmain(int argc, wchar_t **argv)
     check(w != NULL, "launches with Run: Maximized");
     if (w) {
         GetClientRect(w, &r);
-        check(!IsZoomed(w) && r.right == 168 * scale && r.bottom == 211 * scale,
+        check(!IsZoomed(w) && r.right == dev(168, scale) && r.bottom == dev(211, scale),
               "Run: Maximized still shows the Beginner area");
         PostMessageW(w, WM_SYSCOMMAND, SC_MINIMIZE, 0);
         Sleep(500);
         ShowWindow(w, SW_RESTORE);
         Sleep(500);
         GetClientRect(w, &r);
-        check(!IsIconic(w) && !IsZoomed(w) && r.right == 168 * scale,
+        check(!IsIconic(w) && !IsZoomed(w) && r.right == dev(168, scale),
               "a restore after Run: Maximized comes back unmaximised");
         close_app(w, app);
+    }
+
+    /* Game > Zoom: settings.ini's zoom=1.5 sizes the window by 1.5, clicks land
+     * on the square under them, and Zoom In / Out step a level and are kept. */
+    write_state(L"settings.ini",
+                "difficulty=beginner\ncustom=9,9,10\nmarks=1\ncolor=1\nsound=0\nzoom=1.5\n"
+                "x=100\ny=100\n");
+    write_state(L"game.ini", GAME_INI);
+    app = launch(&pid);
+    w = app ? wait_window(pid) : NULL;
+    check(w != NULL, "launches at zoom=1.5");
+    if (w) {
+        int at150 = scale * 3 / 2;
+        HMENU menu = GetMenu(w);
+        GetClientRect(w, &r);
+        printf("# zoom 150%%: client %ldx%ld\n", r.right, r.bottom);
+        check(r.right == dev(168, at150) && r.bottom == dev(211, at150),
+              "zoom=1.5 shows the Beginner area at 150%");
+        check(GetMenuState(menu, ID_ZOOM_100 + 2, MF_BYCOMMAND) & MF_CHECKED,
+              "Game > Zoom > 150% is checked");
+        click(w, at150, 3, 4, 0);
+        click(w, at150, 6, 4, 1);
+        check(shoot(w, at150, &s, "05-zoom150"), "captures at 150%");
+        check(at(&s, 83, 22) == 0xFFFF00, "the smiley is yellow at 150%");
+        check_board_after_clicks(&s);
+        done(&s);
+
+        PostMessageW(w, WM_COMMAND, ID_ZOOM_IN, 0);
+        Sleep(500);
+        GetClientRect(w, &r);
+        check(r.right == dev(168, scale * 7 / 4) && r.bottom == dev(211, scale * 7 / 4),
+              "Zoom In steps to 175%");
+        PostMessageW(w, WM_COMMAND, ID_ZOOM_OUT, 0);
+        PostMessageW(w, WM_COMMAND, ID_ZOOM_OUT, 0);
+        Sleep(500);
+        GetClientRect(w, &r);
+        check(r.right == dev(168, scale * 5 / 4) && r.bottom == dev(211, scale * 5 / 4),
+              "Zoom Out twice steps to 125%");
+        check(GetMenuState(menu, ID_ZOOM_100 + 1, MF_BYCOMMAND) & MF_CHECKED,
+              "Game > Zoom > 125% is checked");
+        /* Every square alike: down column 2 (all covered), each square's white
+         * top edge starts 16 x 1.25 = 20 px below the last, though 211 x 1.25
+         * isn't a whole number of pixels. */
+        if (shoot(w, scale * 5 / 4, &s, "06-zoom125")) {
+            int x = mid(12 + 16 * 2 + 8, s.scale), tops[16], n = 0, even = 1;
+            for (int y = mid(55, s.scale); y < mid(55 + 16 * 9, s.scale) && n < 16; y++)
+                if ((s.px[y * s.w + x] & 0xFFFFFF) == 0xFFFFFF
+                    && (s.px[(y - 1) * s.w + x] & 0xFFFFFF) != 0xFFFFFF)
+                    tops[n++] = y;
+            printf("# 125%% square tops:");
+            for (int i = 0; i < n; i++)
+                printf(" %d", tops[i]);
+            printf("\n");
+            for (int i = 1; i < n; i++)
+                even &= tops[i] - tops[i - 1] == dev(16, s.scale);
+            check(n == 9 && even, "at 125% every row of squares is 20 px tall");
+            done(&s);
+        }
+        close_app(w, app);
+        read_state(L"settings.ini", ini, sizeof ini);
+        check(strstr(ini, "\nzoom=1.25\n") != NULL, "settings.ini keeps zoom=1.25");
     }
 
     /* Fastest Mine Sweepers shows a 32-character name whole, ampersand and all. */

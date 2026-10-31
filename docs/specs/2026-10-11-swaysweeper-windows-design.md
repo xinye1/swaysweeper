@@ -205,21 +205,27 @@ regenerates both in memory and fails if either differs. The icon images are:
 
 The process is PerMonitorV2 DPI-aware (manifest), so Windows never bitmap-stretches it.
 
-**Scale**
+**Scale** (amended 2026-10-29: Game ▸ Zoom has levels, as on Linux)
 
-- `base = max(1, (dpi + 48) / 96)` in integer arithmetic, i.e. rounded: 125 % gives ×1, 150 %
-  and 175 % give ×2. Zoom ×2 covers anyone who finds ×1 small.
-- `want = base × (zoom ? 2 : 1)`.
-- `scale` = the largest integer ≤ `want` whose window fits the monitor's work area, minimum 1.
+- Zoom is on top of the display's scaling: `scale = dpi × zoom% / 9600` device pixels per game
+  pixel, so 100% at 150 % DPI is ×1.5, as other apps are drawn. Lengths round to whole pixels.
+- The levels are the core's `ZOOMS`: 100, 125, 150, 175, 200, 250 and 300 %. At 96, 120, 144 and
+  168 DPI every cell is a whole number of pixels. The core's `scale_nearest` stretches by the
+  exact scale, which `to_game()` inverts, so every cell is drawn alike; GDI only copies. (A
+  StretchDIBits stretch goes by the rounded sizes' ratio and draws one cell a pixel bigger at
+  120 and 168 DPI.)
+- The chosen level shows if it fits the work area; otherwise the largest level that fits. If
+  even 100% doesn't fit, the largest whole-pixel scale that fits, minimum ×1.
 
 **Fitting** measures the outer window, from `AdjustWindowRectExForDpi` plus
 `GetSystemMetricsForDpi`.
 
-- Zoom ×2 is enabled only while `base × 2` fits.
-- When it stops fitting (e.g. a laptop undocked), the item greys out and the game shows at
-  `base`, **for this session only**: `settings.ini` keeps `zoom=2` and the greyed item keeps its
-  check. ×2 comes back by itself once it fits again; the scale is recomputed on `WM_DPICHANGED`,
-  `WM_DISPLAYCHANGE` and `WM_SETTINGCHANGE` (`SPI_SETWORKAREA`).
+- Game ▸ Zoom: Zoom In (Ctrl+=), Zoom Out (Ctrl+-), then a radio item per level, 100% on
+  Ctrl+0. Levels that don't fit are greyed; the check is on the level shown.
+- When the chosen level stops fitting (e.g. a laptop undocked), the game shows the largest that
+  fits, **for this session only**: `settings.ini` keeps the choice, which comes back by itself
+  once it fits again; the scale is recomputed on `WM_DPICHANGED`, `WM_DISPLAYCHANGE` and
+  `WM_SETTINGCHANGE` (`SPI_SETWORKAREA`).
 
 **`WM_GETDPISCALEDSIZE`** returns the exact size for the new DPI.
 
@@ -280,7 +286,7 @@ game always starts.
 
 - Unknown settings keys are ignored.
 - Custom values are clamped (`clamp_custom`).
-- Booleans are `0`/`1`. Zoom is `1`/`2`. Difficulty is a known level or `custom`.
+- Booleans are `0`/`1`. Zoom is `1`, `1.25`, `1.5`, `1.75`, `2`, `2.5` or `3`. Difficulty is a known level or `custom`.
 - Best times are integers from 1 to 999. Names are truncated to 32 code points.
 - Game: version 1; a known difficulty whose dimensions match (standard) or are already in range
   (custom); mines in bounds and unique; marks rows of the right size from `.F?#`; a known state;

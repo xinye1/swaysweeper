@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from swaysweeper import __version__
+from swaysweeper.geometry import ZOOMS
 
 ROOT = Path(__file__).resolve().parent.parent
 REGENERATE = "stale: run /usr/bin/python3 tools/gen_c_sprites.py"
@@ -48,6 +49,15 @@ class Generated(unittest.TestCase):
         major, minor, patch, beta = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)-beta\.(\d+)",
                                                  __version__).groups()
         self.assertIn(f"#define SWAYSWEEPER_VERSION_NUM {major},{minor},{patch},{beta}", text)
+
+    def test_c_zoom_levels_match_python(self):
+        text = (ROOT / "win" / "core.c").read_text()
+        levels = re.search(r"const int ZOOMS\[N_ZOOMS\] = \{([^}]*)\};", text).group(1)
+        names = re.search(r"ZOOM_NAMES\[N_ZOOMS\] = \{([^}]*)\};", text).group(1)
+        self.assertEqual([int(v) for v in levels.split(",")], [round(z * 100) for z in ZOOMS])
+        self.assertEqual([v.strip(' "') for v in names.split(",")], [f"{z:g}" for z in ZOOMS])
+        self.assertIn(f"enum {{ N_ZOOMS = {len(ZOOMS)} }};",
+                      (ROOT / "win" / "core.h").read_text())
 
 
 if __name__ == "__main__":

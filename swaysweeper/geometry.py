@@ -18,8 +18,10 @@ BOARD_X, BOARD_Y = 12, 55
 DIGIT_Y = 16
 FACE_Y = 16
 # Logical pixels reserved for the menu bar, sway's border and the bar when
-# judging whether Zoom x2 fits the monitor (GTK4 exposes no work area).
+# judging whether a zoom fits the monitor (GTK4 exposes no work area).
 CHROME_ALLOWANCE = 96
+# Game ▸ Zoom's levels, as factors; win/core.c's ZOOMS holds them as percent.
+ZOOMS = (1, 1.25, 1.5, 1.75, 2, 2.5, 3)
 
 
 class Rect(NamedTuple):
@@ -85,3 +87,14 @@ def on_face(lay, x, y):
 def zoom_fits(w, h, zoom, mon_w, mon_h):
     gw, gh = game_size(w, h)
     return gw * zoom <= mon_w and gh * zoom + CHROME_ALLOWANCE <= mon_h
+
+
+def fitting_zooms(w, h, mon_w, mon_h):
+    """The levels that fit the monitor; 100 % always, fitting or not."""
+    return (1,) + tuple(z for z in ZOOMS[1:] if zoom_fits(w, h, z, mon_w, mon_h))
+
+
+def zoom_step(levels, shown, step):
+    """Zoom In (+1) or Out (-1) from `shown`, within `levels`."""
+    i = max(0, min(len(levels) - 1, levels.index(shown) + step))
+    return levels[i]

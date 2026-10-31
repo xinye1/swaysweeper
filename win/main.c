@@ -33,7 +33,8 @@ static uint32_t *g_pixels;
 static wchar_t g_dir[MAX_PATH];
 static int g_have_dir;
 static unsigned char g_wav[3][WAV_MAX];
-static int g_scale = 1, g_zoom_fits = 1;
+static int g_scale = 9600;                     /* device px per game px x 9600: dpi x zoom % */
+static int g_fit, g_shown;                     /* ZOOMS indexes: the largest that fits, shown */
 static int g_minimised, g_timer_on, g_captured, g_releasing;
 static int g_last_x = -100000, g_last_y = -100000;
 
@@ -185,11 +186,17 @@ static void area_size(int *w, int *h)
     *h = lay.height;
 }
 
+/* A game length in device pixels at a scale. */
+static int dev(int n, int scale)
+{
+    return (n * scale + 4800) / 9600;
+}
+
 static void outer_size(int scale, UINT dpi, int *w, int *h)
 {
     int aw, ah;
     area_size(&aw, &ah);
-    RECT r = {0, 0, aw * scale, ah * scale};
+    RECT r = {0, 0, dev(aw, scale), dev(ah, scale)};
     AdjustWindowRectExForDpi(&r, STYLE, TRUE, 0, dpi);
     *w = r.right - r.left;
     *h = r.bottom - r.top;
@@ -202,18 +209,14 @@ static int fits(int scale, UINT dpi, const RECT *work)
     return w <= work->right - work->left && h <= work->bottom - work->top;
 }
 
-static int base_scale(UINT dpi)
-{
-    int base = (int)(dpi + 48) / 96;             /* rounded: 125 % -> 1, 150-175 % -> 2 */
-    return base < 1 ? 1 : base;
-}
-
-/* Zoom x2 doubles the base while that fits the work area; otherwise the game
- * shows at base for now and settings.ini keeps zoom=2 for when it fits again. */
+/* Zoom is on top of the display's scaling: 100% at 150% DPI is 1.5 device px
+ * per game px. The chosen level shows while it fits the work area; otherwise
+ * the largest that fits does, and settings.ini keeps the choice for when it
+ * fits again. */
 static int wanted_scale(UINT dpi)
 {
-    int base = base_scale(dpi);
-    return g_settings.zoom == 2 && g_zoom_fits ? base * 2 : base;
+    int want = zoom_index(g_settings.zoom);     /* >= 0: settings_parse admits only levels */
+    return (int)dpi * ZOOMS[want < g_fit ? want : g_fit];
 }
 
 static void update_menu(void)
@@ -224,8 +227,12 @@ static void update_menu(void)
     CheckMenuItem(m, ID_MARKS, MF_BYCOMMAND | (g_settings.marks ? MF_CHECKED : MF_UNCHECKED));
     CheckMenuItem(m, ID_COLOR, MF_BYCOMMAND | (g_settings.color ? MF_CHECKED : MF_UNCHECKED));
     CheckMenuItem(m, ID_SOUND, MF_BYCOMMAND | (g_settings.sound ? MF_CHECKED : MF_UNCHECKED));
-    CheckMenuItem(m, ID_ZOOM, MF_BYCOMMAND | (g_settings.zoom == 2 ? MF_CHECKED : MF_UNCHECKED));
-    EnableMenuItem(m, ID_ZOOM, MF_BYCOMMAND | (g_zoom_fits ? MF_ENABLED : MF_GRAYED));
+    for (int i = 0; i < N_ZOOMS; i++)
+        EnableMenuItem(m, ID_ZOOM_100 + (UINT)i, MF_BYCOMMAND | (i <= g_fit ? MF_ENABLED : MF_GRAYED));
+    CheckMenuRadioItem(m, ID_ZOOM_100, ID_ZOOM_100 + N_ZOOMS - 1, ID_ZOOM_100 + (UINT)g_shown,
+                       MF_BYCOMMAND);
+    EnableMenuItem(m, ID_ZOOM_IN, MF_BYCOMMAND | (g_shown < g_fit ? MF_ENABLED : MF_GRAYED));
+    EnableMenuItem(m, ID_ZOOM_OUT, MF_BYCOMMAND | (g_shown > 0 ? MF_ENABLED : MF_GRAYED));
 }
 
 static void apply_size(void)
@@ -240,10 +247,15 @@ static void apply_size(void)
     GetMonitorInfoW(MonitorFromRect(&wr, MONITOR_DEFAULTTONEAREST), &mi);
     const RECT *work = &mi.rcWork;
 
-    g_zoom_fits = fits(base_scale(dpi) * 2, dpi, work);
+    for (g_fit = 0; g_fit + 1 < N_ZOOMS && fits((int)dpi * ZOOMS[g_fit + 1], dpi, work); g_fit++)
+        ;
+    int want = zoom_index(g_settings.zoom);
+    g_shown = want < g_fit ? want : g_fit;
     g_scale = wanted_scale(dpi);
-    while (g_scale > 1 && !fits(g_scale, dpi, work))
-        g_scale--;
+    if (!fits(g_scale, dpi, work))              /* not even 100%: whole device px, down to 1 */
+        for (g_scale = (int)dpi / 96 * 9600; g_scale > 9600 && !fits(g_scale, dpi, work);
+             g_scale -= 9600)
+            ;
 
     int w, h, x = wr.left, y = wr.top;           /* the top-left stays put... */
     outer_size(g_scale, dpi, &w, &h);
@@ -263,8 +275,8 @@ static void apply_size(void)
     area_size(&aw, &ah);
     RECT cr;
     GetClientRect(g_wnd, &cr);
-    if (cr.bottom != ah * g_scale)
-        SetWindowPos(g_wnd, NULL, 0, 0, w, h + ah * g_scale - cr.bottom,
+    if (cr.bottom != dev(ah, g_scale))
+        SetWindowPos(g_wnd, NULL, 0, 0, w, h + dev(ah, g_scale) - cr.bottom,
                      SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE);
     update_menu();
     InvalidateRect(g_wnd, NULL, FALSE);
@@ -272,22 +284,40 @@ static void apply_size(void)
 
 /* --- paint (spec §3.1) ------------------------------------------------------- */
 
+/* The core stretches, by the scale to_game() inverts; GDI copies 1:1. If the
+ * stretched buffer can't be had, GDI stretches, a pixel out at some sizes. */
 static void blit(HDC dc)
 {
+    static uint32_t *scaled;
+    static size_t cap;
     int w, h;
     area_size(&w, &h);
     render_session(&g_session, g_pixels, w);
+    int dw = dev(w, g_scale), dh = dev(h, g_scale);
+    size_t need = (size_t)dw * (size_t)dh;
+    if (need > cap) {
+        free(scaled);
+        scaled = malloc(need * sizeof *scaled);
+        cap = scaled ? need : 0;
+    }
     BITMAPINFO bi;
     memset(&bi, 0, sizeof bi);
     bi.bmiHeader.biSize = sizeof bi.bmiHeader;
-    bi.bmiHeader.biWidth = w;
-    bi.bmiHeader.biHeight = -h;                  /* top-down */
     bi.bmiHeader.biPlanes = 1;
     bi.bmiHeader.biBitCount = 32;
     bi.bmiHeader.biCompression = BI_RGB;
-    SetStretchBltMode(dc, COLORONCOLOR);
-    StretchDIBits(dc, 0, 0, w * g_scale, h * g_scale, 0, 0, w, h, g_pixels, &bi, DIB_RGB_COLORS,
-                  SRCCOPY);
+    if (scaled) {
+        scale_nearest(g_pixels, w, h, scaled, dw, dh, g_scale);
+        bi.bmiHeader.biWidth = dw;
+        bi.bmiHeader.biHeight = -dh;             /* top-down */
+        SetDIBitsToDevice(dc, 0, 0, (DWORD)dw, (DWORD)dh, 0, 0, 0, (UINT)dh, scaled, &bi,
+                          DIB_RGB_COLORS);
+    } else {
+        bi.bmiHeader.biWidth = w;
+        bi.bmiHeader.biHeight = -h;
+        SetStretchBltMode(dc, COLORONCOLOR);
+        StretchDIBits(dc, 0, 0, dw, dh, 0, 0, w, h, g_pixels, &bi, DIB_RGB_COLORS, SRCCOPY);
+    }
 }
 
 /* --- timer, sound, effects --------------------------------------------------- */
@@ -345,7 +375,7 @@ static void apply(const Effects *fx)
  * captured pointer left of or above the window stays off the board. */
 static int to_game(int v)
 {
-    return v >= 0 ? v / g_scale : -((-v + g_scale - 1) / g_scale);
+    return v >= 0 ? v * 9600 / g_scale : -((-v * 9600 + g_scale - 1) / g_scale);
 }
 
 static unsigned held_from(WPARAM wp)
@@ -595,8 +625,19 @@ static void set_level(Level level, const int custom[3])
     new_game();
 }
 
+static void set_zoom(int i)
+{
+    g_settings.zoom = ZOOMS[i < 0 ? 0 : i > g_fit ? g_fit : i];
+    save_settings();
+    apply_size();
+}
+
 static void command(int id)
 {
+    if (id >= ID_ZOOM_100 && id < ID_ZOOM_100 + N_ZOOMS) {
+        set_zoom(id - ID_ZOOM_100);
+        return;
+    }
     switch (id) {
     case ID_NEW: new_game(); break;
     case ID_BEGINNER:
@@ -617,7 +658,8 @@ static void command(int id)
         InvalidateRect(g_wnd, NULL, FALSE);
         break;
     case ID_SOUND: g_settings.sound = !g_settings.sound; save_settings(); update_menu(); break;
-    case ID_ZOOM: g_settings.zoom = g_settings.zoom == 2 ? 1 : 2; save_settings(); apply_size(); break;
+    case ID_ZOOM_IN: set_zoom(g_shown + 1); break;
+    case ID_ZOOM_OUT: set_zoom(g_shown - 1); break;
     case ID_BEST: dialog(IDD_BEST, best_proc, 0); break;
     case ID_EXIT: DestroyWindow(g_wnd); break;
     case ID_KEYS: dialog(IDD_KEYS, keys_proc, 0); break;

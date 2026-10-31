@@ -9,7 +9,7 @@ colours and all. Inspired by [omasweeper](https://github.com/jankeesvw/omasweepe
   the middle button or Shift+left, on the first button released.
 - One deliberate deviation: the 95/98 one-click-win timer bug is fixed, as 2000 did.
 - Extras that stay out of the way: vim/arrow keyboard play (`?` lists the keys),
-  Zoom ×2 when it fits, and a game in progress survives closing — or a crash.
+  Game ▸ Zoom from 100% to 300% (Ctrl+= and Ctrl+-), and a game in progress survives closing — or a crash.
 
 ![A lost Intermediate game](screenshots/win95.png)
 
@@ -48,7 +48,7 @@ Download `swaysweeper-windows-x86_64.exe` from the
 [releases](https://github.com/xinye1/swaysweeper/releases) and run it. For this beta:
 
 ```powershell
-$url = "https://github.com/xinye1/swaysweeper/releases/download/v0.1.0-beta.2/swaysweeper-windows-x86_64.exe"
+$url = "https://github.com/xinye1/swaysweeper/releases/download/v0.1.0-beta.3/swaysweeper-windows-x86_64.exe"
 Invoke-WebRequest $url -OutFile swaysweeper.exe
 (Get-FileHash swaysweeper.exe -Algorithm SHA256).Hash   # compare with the .sha256 on the release
 .\swaysweeper.exe

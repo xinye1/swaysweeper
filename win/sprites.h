@@ -765,6 +765,8 @@ static const char KEYS_TEXT[] =
     "  f                      flag, then ?, then clear\n"
     "  c                      open around a number\n"
     "  F2                     new game\n"
+    "  Ctrl+= and Ctrl+-      zoom in and out\n"
+    "  Ctrl+0                 zoom 100%\n"
     "  ?                      this list\n"
     "  Ctrl+Q                 exit";
 

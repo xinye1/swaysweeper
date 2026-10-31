@@ -87,13 +87,19 @@ class Settings(unittest.TestCase):
         self.assertEqual(s["custom"], [30, 24, 667])
 
     def test_bad_values_raise(self):
-        for bad in ({"difficulty": "nightmare"}, {"zoom": 3}, {"marks": "yes"},
+        for bad in ({"difficulty": "nightmare"}, {"zoom": 3.5}, {"zoom": 0}, {"zoom": True},
+                    {"zoom": "2"}, {"marks": "yes"},
                     {"custom": [1, 2]}, ["not", "a", "dict"]):
             with self.assertRaises(ValueError, msg=bad):
                 store.settings_from(bad)
 
+    def test_every_zoom_level_is_accepted(self):
+        for z in (1, 1.25, 1.5, 1.75, 2, 2.5, 3, 2.0):
+            self.assertEqual(store.settings_from({"zoom": z})["zoom"], z)
+
     def test_round_trips_through_json(self):
         s = store.default_settings()
+        s["zoom"] = 1.25
         self.assertEqual(store.settings_from(json.loads(json.dumps(s))), s)
 
 
